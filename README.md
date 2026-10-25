@@ -18,9 +18,12 @@ Keep HTTPS enabled. No build command, external fonts, advertising scripts or ana
 
 ## Policy maintenance
 
-The privacy policy describes the inspected app's current behavior, including optional Google/Firebase
-sharing and satellite imagery requests. It does not claim that a self-service account deletion
-feature is already available. Update the policy and support instructions when that feature and its
-backend cleanup have been implemented and verified.
+The privacy policy and support page describe TerraWarden 1.9.18 and later, including self-service
+cloud account deletion from Settings > Privacy > Cloud Account & Data (also Layer Sync > Privacy).
+They explain the effects on owned groups and contributed shared content, acceptance and completion,
+local data that remains, and retention of deletion status and synchronization removal records.
+Keep these details aligned with the app and deployed deletion service. Retain the Google/Firebase
+and other provider disclosures and the support contact when updating the pages.
 
 The app's source code and service configuration do not belong in this repository.
+
