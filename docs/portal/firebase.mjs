@@ -33,6 +33,7 @@ export class ViewerClient {
       body:refresh ? new URLSearchParams({grant_type:'refresh_token',refresh_token:previous.refreshToken}) : JSON.stringify({returnSecureToken:true})
     });
     const value=await response.json();
+    if(response.status===429||response.status>=500)throw fail('Browser sign-in is temporarily unavailable. Retrying…','network');
     if(!response.ok) throw fail('Browser sign-in failed. Check the Web API key and that Anonymous Authentication is enabled. If this identity was removed, clear this site’s saved data and rejoin.', 'auth');
     const next={uid:value[refresh?'user_id':'localId'],refreshToken:value[refresh?'refresh_token':'refreshToken'],idToken:value[refresh?'id_token':'idToken'],expiresAt:Date.now()+Number(value[refresh?'expires_in':'expiresIn'])*1000};
     if(!next.uid || !next.refreshToken || !next.idToken || !Number.isFinite(next.expiresAt) || (previous && next.uid!==previous.uid)) throw fail('The browser identity could not be verified.','auth');
@@ -83,13 +84,14 @@ export class ViewerClient {
     return {id:invite.groupID,name:group.name,role:group.members[this.uid].role};
   }
   async watch(path,onData,onStatus,signal) {
-    let retry=0,force=false;
+    let retry=0,force=false,refreshedAfterDenial=false;
     while(!signal.aborted) {
       let reader;
       try {
         onStatus('connecting');
         const token=await this.token(force); force=false;
         const response=await fetch(this.url(path,token),{headers:{Accept:'text/event-stream'},cache:'no-store',signal,referrerPolicy:'no-referrer'});
+        if(response.status===401&&!refreshedAfterDenial){refreshedAfterDenial=true;force=true;await response.body?.cancel();throw fail('Refreshing browser sign-in.','refresh');}
         if([401,403].includes(response.status))throw fail('Group access was denied.','permission');
         if(!response.ok || !response.body)throw fail('Live sync is temporarily unavailable.','network');
         reader=response.body.getReader();
@@ -102,7 +104,7 @@ export class ViewerClient {
             if(frame.event==='auth_revoked'){force=true;throw fail('Refreshing browser sign-in.','refresh');}
             if(frame.event==='put'||frame.event==='patch'){
               tree=reduceEvent(tree,frame.event,JSON.parse(frame.data));
-              onData(tree);retry=0;onStatus('live');
+              onData(tree);retry=0;refreshedAfterDenial=false;onStatus('live');
             }
           }
         }

@@ -60,3 +60,25 @@ test('live sync applies changes and stops after authoritative access cancellatio
   globalThis.fetch=async(url)=>url.includes('accounts:signUp')?Response.json({localId:'B',refreshToken:'r',idToken:'t',expiresIn:'3600'}):new Response(payload,{headers:{'Content-Type':'text/event-stream'}});
   try{const client=new ViewerClient({apiKey:'test',databaseURL:'https://test.firebaseio.com'}),values=[],statuses=[];await client.watch('pinGroups/G',v=>values.push(v),s=>statuses.push(s),new AbortController().signal);assert.deepEqual(values.at(-1),{items:{Q:2}});assert.equal(statuses.at(-1),'denied');}finally{globalThis.fetch=original;}
 });
+test('a stream rejected with an expired token refreshes and reconnects without losing identity',async()=>{
+ const memory=new Map(),original=globalThis.fetch;
+ memory.set('tw.portal.identity.v1.test.firebaseio.com',JSON.stringify({uid:'B',refreshToken:'saved-refresh'}));
+ globalThis.localStorage={getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)};
+ let refreshes=0,streams=0;const controller=new AbortController(),values=[],statuses=[];
+ globalThis.fetch=async url=>{
+   if(url.includes('securetoken')){refreshes++;return Response.json({user_id:'B',refresh_token:'saved-refresh',id_token:`token-${refreshes}`,expires_in:'3600'});}
+   if(++streams===1)return Response.json({error:'Auth token is expired'},{status:401});
+   assert.match(url,/auth=token-2/);
+   return new Response('event: put\ndata: {"path":"/","data":{"name":"Restored"}}\n\n');
+ };
+ try{const client=new ViewerClient({apiKey:'test',databaseURL:'https://test.firebaseio.com'});await client.watch('pinGroups/G',v=>{values.push(v);controller.abort();},s=>statuses.push(s),controller.signal);assert.equal(refreshes,2);assert.equal(streams,2);assert.equal(values[0].name,'Restored');assert.ok(!statuses.includes('denied'));assert.equal(JSON.parse(memory.values().next().value).uid,'B');}finally{globalThis.fetch=original;}
+});
+test('a temporary authentication service failure preserves identity and retries live sync',async()=>{
+ const original=globalThis.fetch,controller=new AbortController();let refreshes=0;const statuses=[];
+ globalThis.localStorage={getItem:()=>JSON.stringify({uid:'B',refreshToken:'saved-refresh'}),setItem:()=>{}};
+ globalThis.fetch=async url=>{
+   if(url.includes('securetoken')){if(++refreshes===1)return Response.json({error:'Temporary outage'},{status:503});return Response.json({user_id:'B',refresh_token:'saved-refresh',id_token:'ok',expires_in:'3600'});}
+   return new Response('event: put\ndata: {"path":"/","data":{"name":"Restored"}}\n\n');
+ };
+ try{const client=new ViewerClient({apiKey:'test',databaseURL:'https://test.firebaseio.com'});await client.watch('pinGroups/G',()=>controller.abort(),s=>statuses.push(s),controller.signal);assert.equal(refreshes,2);assert.ok(statuses.includes('reconnecting'));assert.ok(!statuses.includes('denied'));assert.equal(client.uid,'B');}finally{globalThis.fetch=original;}
+});

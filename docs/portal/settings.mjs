@@ -5,7 +5,7 @@ export function readAPIKey(){
 export function saveAPIKey(input){
   const key=input.trim();
   if(!/^[A-Za-z0-9_-]{20,200}$/.test(key))throw new Error('Paste a Firebase API key, with no spaces or JSON.');
-  try{localStorage.setItem(keyName,JSON.stringify(key));}catch{throw new Error('This browser blocked saving the key. Allow site storage and try again.');}
+  try{localStorage.setItem(keyName,JSON.stringify(key));if(localStorage.getItem(keyName)!==JSON.stringify(key))throw new Error('Storage verification failed.');}catch{throw new Error('This browser blocked saving the key. Allow site storage and try again.');}
   return key;
 }
 export function removeAPIKey(){
@@ -15,3 +15,8 @@ export function readTheme(){try{const value=JSON.parse(localStorage.getItem('tw.
 export function saveTheme(value){if(!['light','dark'].includes(value))throw new Error('Invalid theme.');localStorage.setItem('tw.portal.theme',JSON.stringify(value));}
 export function readLabelAngle(){try{const value=JSON.parse(localStorage.getItem('tw.portal.labelAngle'));return typeof value==='number'&&Number.isFinite(value)?Math.max(-180,Math.min(180,value)):0;}catch{return 0;}}
 export function saveLabelAngle(value){if(!Number.isFinite(value)||value < -180||value>180)throw new Error('Invalid label angle.');localStorage.setItem('tw.portal.labelAngle',JSON.stringify(value));}
+
+// This is a best-effort request, not a guarantee against cleared site data.
+export async function requestPersistentStorage(storage=globalThis.navigator?.storage){
+  try{return storage?.persist ? await storage.persist() : false;}catch{return false;}
+}

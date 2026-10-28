@@ -95,3 +95,9 @@ pdf-lib, fontkit and bundled fonts/codecs are in `docs/portal/vendor/`.
 The native app source and private service configuration remain outside this
 public repository.
 
+
+### Remembered connections
+
+The API key, last successful invitation, group and browser identity are saved locally. Connection/authentication failures and opening the demo do not erase the remembered connection. Use **Reconnect saved group** to retry; the server still checks membership and editing permissions. **Disconnect** explicitly forgets the group and invitation. **Remove saved key** forgets the API key.
+
+The portal requests persistent storage when you save a key or join, where supported. This is best effort: Safari and a Home Screen installation can have separate data, and browser eviction or clearing site data can remove all saved settings. If the saved identity is missing, rejoin with a current invitation. Site updates keep the same storage keys.
