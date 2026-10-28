@@ -1,0 +1,389 @@
+{
+  "group": {
+    "name": "Redridge field survey",
+    "isDeleted": false,
+    "items": {
+      "layer-1EE4F471-9F1D-4B9F-843E-123456789001": {
+        "kind": "layer",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789001",
+        "name": "Drill collars",
+        "isDeleted": false,
+        "modifiedAt": 790000000,
+        "modifiedBy": "demo",
+        "privacyVersion": 2
+      },
+      "layer-1EE4F471-9F1D-4B9F-843E-123456789002": {
+        "kind": "layer",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789002",
+        "name": "Field observations",
+        "isDeleted": false,
+        "modifiedAt": 790000000,
+        "modifiedBy": "demo",
+        "privacyVersion": 2
+      },
+      "layer-1EE4F471-9F1D-4B9F-843E-123456789003": {
+        "kind": "layer",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789003",
+        "name": "Routes & boundaries",
+        "isDeleted": false,
+        "modifiedAt": 790000000,
+        "modifiedBy": "demo",
+        "privacyVersion": 2
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789001-DEMO-PIN-0": {
+        "kind": "pin",
+        "name": "RR-0241",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789001",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-0",
+          "name": "RR-0241",
+          "latitude": -23.356299999999997,
+          "longitude": 119.6556,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790000000,
+          "unitID": "TW-04",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional drill collar. Ready for logging."
+        }
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789001-DEMO-PIN-1": {
+        "kind": "pin",
+        "name": "RR-0242",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789001",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-1",
+          "name": "RR-0242",
+          "latitude": -23.352999999999998,
+          "longitude": 119.6604,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790000600,
+          "unitID": "TW-04",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional drill collar. Ready for logging."
+        }
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789001-DEMO-PIN-2": {
+        "kind": "pin",
+        "name": "RR-0243",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789001",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-2",
+          "name": "RR-0243",
+          "latitude": -23.349999999999998,
+          "longitude": 119.6664,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790001200,
+          "unitID": "TW-04",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional drill collar. Ready for logging."
+        }
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789001-DEMO-PIN-3": {
+        "kind": "pin",
+        "name": "RR-0244",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789001",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-3",
+          "name": "RR-0244",
+          "latitude": -23.3461,
+          "longitude": 119.67060000000001,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790001800,
+          "unitID": "TW-04",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional drill collar. Ready for logging."
+        }
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789001-DEMO-PIN-4": {
+        "kind": "pin",
+        "name": "RR-0245",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789001",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-4",
+          "name": "RR-0245",
+          "latitude": -23.344299999999997,
+          "longitude": 119.6754,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790002400,
+          "unitID": "TW-04",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional drill collar. Ready for logging."
+        }
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789001-DEMO-PIN-5": {
+        "kind": "pin",
+        "name": "RR-0246",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789001",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-5",
+          "name": "RR-0246",
+          "latitude": -23.342499999999998,
+          "longitude": 119.6808,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790003000,
+          "unitID": "TW-04",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional drill collar. Ready for logging."
+        }
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789002-DEMO-PIN-6": {
+        "kind": "pin",
+        "name": "Outcrop A",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789002",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-6",
+          "name": "Outcrop A",
+          "latitude": -23.3407,
+          "longitude": 119.6868,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790003600,
+          "unitID": "FIELD",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional observation recorded during the field survey."
+        }
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789002-DEMO-PIN-7": {
+        "kind": "pin",
+        "name": "Sample station",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789002",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-7",
+          "name": "Sample station",
+          "latitude": -23.3422,
+          "longitude": 119.6622,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790004200,
+          "unitID": "FIELD",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional observation recorded during the field survey."
+        }
+      },
+      "pin-1EE4F471-9F1D-4B9F-843E-123456789002-DEMO-PIN-8": {
+        "kind": "pin",
+        "name": "Creek crossing",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789002",
+        "isDeleted": false,
+        "pin": {
+          "id": "DEMO-PIN-8",
+          "name": "Creek crossing",
+          "latitude": -23.3551,
+          "longitude": 119.6814,
+          "easting": 0,
+          "northing": 0,
+          "timestamp": 790004800,
+          "unitID": "FIELD",
+          "mineSite": "Redridge (demo)",
+          "note": "Fictional observation recorded during the field survey."
+        }
+      }
+    }
+  },
+  "manifests": {
+    "DEMO-ROUTE-1": {
+      "schemaVersion": 1,
+      "routeID": "DEMO-ROUTE-1",
+      "layerID": "1EE4F471-9F1D-4B9F-843E-123456789003",
+      "revision": "demo-revision-1",
+      "chunkCount": 1,
+      "pointCount": 9,
+      "lastChunk": "c000000",
+      "isDeleted": false,
+      "metadata": {
+        "name": "Morning traverse",
+        "note": "Fictional geometry for the portal demonstration.",
+        "geometryKind": "recordedRoute",
+        "distanceMeters": 5420,
+        "unitID": "TW-04",
+        "mineSite": "Redridge (demo)",
+        "creatorName": "TerraWarden demo",
+        "startedAt": 790000000
+      }
+    },
+    "DEMO-LINE-1": {
+      "schemaVersion": 1,
+      "routeID": "DEMO-LINE-1",
+      "layerID": "1EE4F471-9F1D-4B9F-843E-123456789003",
+      "revision": "demo-revision-1",
+      "chunkCount": 1,
+      "pointCount": 6,
+      "lastChunk": "c000000",
+      "isDeleted": false,
+      "metadata": {
+        "name": "Survey boundary",
+        "note": "Fictional geometry for the portal demonstration.",
+        "geometryKind": "drawnLine",
+        "distanceMeters": 4621,
+        "unitID": "TW-04",
+        "mineSite": "Redridge (demo)",
+        "creatorName": "TerraWarden demo",
+        "startedAt": 790000000,
+        "drawingAppearance": {
+          "lineStyle": "dashed",
+          "lineWidth": "thin"
+        }
+      }
+    }
+  },
+  "geometry": {
+    "DEMO-ROUTE-1": {
+      "c000000": {
+        "schemaVersion": 1,
+        "routeID": "DEMO-ROUTE-1",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789003",
+        "revision": "demo-revision-1",
+        "index": 0,
+        "count": 9,
+        "points": {
+          "p0000": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3614,
+              "longitude": 119.6448,
+              "timestamp": 790000000
+            }
+          },
+          "p0001": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.359299999999998,
+              "longitude": 119.6496,
+              "timestamp": 790000060
+            }
+          },
+          "p0002": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.356299999999997,
+              "longitude": 119.6556,
+              "timestamp": 790000120
+            }
+          },
+          "p0003": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3542,
+              "longitude": 119.6622,
+              "timestamp": 790000180
+            }
+          },
+          "p0004": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.349999999999998,
+              "longitude": 119.6664,
+              "timestamp": 790000240
+            }
+          },
+          "p0005": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3461,
+              "longitude": 119.67060000000001,
+              "timestamp": 790000300
+            }
+          },
+          "p0006": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.344299999999997,
+              "longitude": 119.6754,
+              "timestamp": 790000360
+            }
+          },
+          "p0007": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.342499999999998,
+              "longitude": 119.6808,
+              "timestamp": 790000420
+            }
+          },
+          "p0008": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.339499999999997,
+              "longitude": 119.6892,
+              "timestamp": 790000480
+            }
+          }
+        }
+      }
+    },
+    "DEMO-LINE-1": {
+      "c000000": {
+        "schemaVersion": 1,
+        "routeID": "DEMO-LINE-1",
+        "layerID": "1EE4F471-9F1D-4B9F-843E-123456789003",
+        "revision": "demo-revision-1",
+        "index": 0,
+        "count": 6,
+        "points": {
+          "p0000": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3527,
+              "longitude": 119.66760000000001,
+              "timestamp": 790000000
+            }
+          },
+          "p0001": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3551,
+              "longitude": 119.6724,
+              "timestamp": 790000060
+            }
+          },
+          "p0002": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3527,
+              "longitude": 119.6814,
+              "timestamp": 790000120
+            }
+          },
+          "p0003": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3461,
+              "longitude": 119.6832,
+              "timestamp": 790000180
+            }
+          },
+          "p0004": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3431,
+              "longitude": 119.6742,
+              "timestamp": 790000240
+            }
+          },
+          "p0005": {
+            "segmentID": "segment-1",
+            "point": {
+              "latitude": -23.3527,
+              "longitude": 119.66760000000001,
+              "timestamp": 790000300
+            }
+          }
+        }
+      }
+    }
+  }
+}
