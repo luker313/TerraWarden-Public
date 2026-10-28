@@ -3,8 +3,10 @@ import { readAPIKey, saveAPIKey, removeAPIKey } from './settings.mjs';
 import { makeModel, decodeGroup, decodeRoute, inPolygon, swiftDate } from './core.mjs';
 import { openPDF, geoPDFRegions } from './pdf-map.mjs';
 import { ViewerClient } from './firebase.mjs';
+import { formattedGrid, datumNote } from './coordinates.mjs';
+import { LocationTracker, accuracyRing } from './location.mjs';
 const $=(id)=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
-const state={layers:[],hidden:new Set(),routes:new Map(),manifests:{},group:null,mode:'empty',pdf:null,metadata:null,page:1,viewport:null,model:null,regions:[],anchors:[],capture:false,scale:1,x:0,y:0,selected:null,session:null,generation:0,pdfGeneration:0,pageGeneration:0,routePending:new Set(),routeErrors:new Set(),opacity:1};
+const state={layers:[],hidden:new Set(),routes:new Map(),manifests:{},group:null,mode:'empty',pdf:null,metadata:null,page:1,viewport:null,model:null,regions:[],anchors:[],capture:false,scale:1,x:0,y:0,selected:null,session:null,generation:0,pdfGeneration:0,pageGeneration:0,routePending:new Set(),routeErrors:new Set(),opacity:1,crs:null,readout:null,gpsFix:null,gpsStatus:'off'};
 let toastTimer,dragDepth=0,drawRequest=0,client=null;
 const saved=(key)=>{try{return JSON.parse(localStorage.getItem(key));}catch{return null;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{toast('Browser storage is unavailable. Changes will last for this visit.');}};
@@ -47,17 +49,21 @@ function renderLists(){
 }
 function updateAlignment(){
   state.model=null;
+  const region=state.regions[Number($('region-select').value)||0];state.crs=region?.crs||null;
   let error='';
   if(state.anchors.length>=3){try{state.model=makeModel(state.anchors,state.pageBox,false);}catch(e){error=e.message;}}
   else if(!state.anchors.length)state.model=state.regions[Number($('region-select').value)||0]?.model||null;
-  $('alignment-status').textContent=state.model?(state.anchors.length?'Reference points applied':'WGS84 GeoPDF aligned'):state.anchors.length?`${state.anchors.length} of 3 reference points`:'Map alignment needed';
+  $('alignment-status').textContent=state.model?(state.anchors.length?'Reference points applied':`${region?.source||'GeoPDF'} aligned`):state.anchors.length?`${state.anchors.length} of 3 reference points`:'Map alignment needed';
   $('alignment-icon').textContent=state.model?'●':'○';
-  $('calibration-note').textContent=error||(state.model&&state.anchors.length?`${state.anchors.length} points · fit residual ${state.model.rmsMetres.toFixed(1)} m. This fit does not measure map accuracy. Three-point alignment is a local affine approximation; add extra points to check the fit.`:state.alignmentMessage||'');
+  $('calibration-note').textContent=error||(state.model&&state.anchors.length?`${state.anchors.length} points · fit residual ${state.model.rmsMetres.toFixed(1)} m. This fit does not measure map accuracy. Three-point alignment is a local affine approximation; add extra points to check the fit.`:region?.note||state.alignmentMessage||'');
   const list=$('anchor-list');list.replaceChildren();
   state.anchors.forEach((p,i)=>{const li=node('li','',`${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`),b=node('button','', '×');b.setAttribute('aria-label',`Remove reference point ${i+1}`);b.addEventListener('click',()=>{state.anchors.splice(i,1);save(calibrationKey(),state.anchors);updateAlignment();});li.append(b);list.append(li);});
   $('export-calibration').disabled=state.anchors.length<3;
   if(!state.model&&state.pdf)notice(state.anchors.length?'Add at least three well-spaced reference points to show geographic features.':state.alignmentMessage);
   else notice(state.model?.rmsMetres>10?'The reference points have a large fit residual. Check coordinates or add more points.':'');
+  if(state.model){const b=state.pageBox;state.readout={point:state.model.toGeo((b[0]+b[2])/2,(b[1]+b[3])/2),source:'Map centre'};}else state.readout=null;
+  refreshCoordinates();
+  if(state.selected){const selected=allFeatures().find(f=>f.id===state.selected);if(selected)showDetail(selected,false);}
   scheduleDraw();
 }
 async function openBytes(bytes,name){
@@ -125,17 +131,53 @@ function drawOverlay(){
     }
   }
   state.anchors.forEach((a,i)=>{const[x,y]=state.viewport.convertToViewportPoint(a.x,a.y),g=svg('g');g.append(svg('circle',{cx:x,cy:y,r:9/k,fill:'#234d3a',stroke:'#fff','stroke-width':2/k}));const text=svg('text',{x,y:y+3/k,'text-anchor':'middle',fill:'#fff','font-size':10/k});text.textContent=i+1;g.append(text);overlay.append(g);});
+  drawGPS(overlay,k);
   $('visibility-status').textContent=state.model?`${shown} of ${visibleFeatures().length} features intersect this page`:allFeatures().length?'Align the map to place shared features':'Ready when you are';
 }
 function closeDetail(){state.selected=null;$('feature-detail').hidden=true;}
 function showDetail(f,center){
   state.selected=f.id;$('detail-kind').textContent=`${f.type} · ${f.layerName}`;$('detail-title').textContent=f.name;$('detail-fields').replaceChildren();
-  const date=swiftDate(f.timestamp??f.createdAt??f.startedAt),fields=[['Unit ID',f.unitID],['Site',f.mineSite],['Coordinates',f.type==='pin'?`${f.latitude.toFixed(7)}, ${f.longitude.toFixed(7)}`:null],['Distance',f.distanceMeters!=null?`${(f.distanceMeters/1000).toFixed(3)} km`:null],['Recorded',date&&!isNaN(date)?date.toLocaleString():null],['Created by',f.creatorName],['Note',f.note]];
-  for(const[label,value]of fields)if(value){$('detail-fields').append(node('dt','',label),node('dd','',String(value)));}
+  const grid=f.type==='pin'?formattedGrid(f,state.crs):null;
+  const date=swiftDate(f.timestamp??f.createdAt??f.startedAt),fields=[['Easting',grid?grid.eastingText+' m':null],['Northing',grid?grid.northingText+' m':null],['Coordinate system',grid?.label],['Unit ID',f.unitID],['Site',f.mineSite],['WGS84 latitude / longitude',f.type==='pin'?`${f.latitude.toFixed(7)}, ${f.longitude.toFixed(7)}`:null],['Distance',f.distanceMeters!=null?`${(f.distanceMeters/1000).toFixed(3)} km`:null],['Recorded',date&&!isNaN(date)?date.toLocaleString():null],['Created by',f.creatorName],['Note',f.note]];
+  for(const[label,value]of fields)if(value){const cls=['Easting','Northing'].includes(label)?'grid-field':'';$('detail-fields').append(node('dt',cls,label),node('dd',cls,String(value)));}
   if(!$('detail-fields').children.length)$('detail-fields').append(node('dd','', 'No additional details.'));
   $('feature-detail').hidden=false;
+  if(f.type==='pin'){state.readout={point:f,source:'Selected pin'};refreshCoordinates();}
   if(center&&state.model){const point=f.type==='pin'?f:f.segments.flatMap(s=>s.points)[0],pos=point&&pdfPosition(point);if(pos){const rect=$('map-area').getBoundingClientRect();state.scale=Math.max(state.scale,1.1);state.x=rect.width*.4-pos.screen[0]*state.scale;state.y=rect.height*.5-pos.screen[1]*state.scale;transform();}}
 }
+function refreshCoordinates(){
+  const gpsActive=locationTracker.running,fix=state.gpsFix,readout=gpsActive?(fix?{point:fix,source:'GPS'}:null):state.readout;
+  $('coordinate-card').hidden=!state.viewport&&!gpsActive;
+  const grid=readout?formattedGrid(readout.point,state.crs):null;
+  $('coordinate-source').textContent=gpsActive?(fix?(Date.now()-fix.timestamp>30000?'GPS · last fix':'GPS'):'GPS · waiting'):readout?.source||'Map coordinates';
+  $('readout-easting').textContent=grid?.eastingText||'—';$('readout-northing').textContent=grid?.northingText||'—';
+  $('readout-crs').textContent=grid?.label||state.crs?.label||'WGS84 / UTM · automatic zone';
+  $('readout-crs').title=datumNote((grid?.crs||state.crs)?.datum);
+  $('readout-secondary').textContent=readout?`WGS84 ${readout.point.latitude.toFixed(6)}, ${readout.point.longitude.toFixed(6)}`:'Move over the aligned map or use Locate me';
+  $('gps-status').hidden=!gpsActive&&state.gpsStatus!=='denied';
+  if(gpsActive&&fix){const age=Math.max(0,Math.round((Date.now()-fix.timestamp)/1000));const pos=state.model?.toPDF(fix.latitude,fix.longitude),inside=pos&&inPolygon(pos,state.model.footprint)&&pos[0]>=state.pageBox[0]&&pos[0]<=state.pageBox[2]&&pos[1]>=state.pageBox[1]&&pos[1]<=state.pageBox[3];$('gps-status').textContent=`±${Math.round(fix.accuracy)} m · ${age>30?`last fix ${age}s ago`:'GPS accuracy'}${state.model&&!inside?' · outside this page':''}${state.gpsStatus==='unavailable'?' · waiting for signal':''}`;}
+}
+const locationTracker=new LocationTracker(navigator.geolocation,fix=>{
+  const first=!state.gpsFix;state.gpsFix=fix;refreshCoordinates();scheduleDraw();
+  if(first&&state.model){const pos=pdfPosition(fix);if(pos&&inPolygon(pos.pdf,state.model.footprint)){const rect=$('map-area').getBoundingClientRect();state.x=rect.width/2-pos.screen[0]*state.scale;state.y=rect.height/2-pos.screen[1]*state.scale;transform();}}
+},(phase,message)=>{
+  state.gpsStatus=phase;$('locate').setAttribute('aria-pressed',String(locationTracker.running));$('locate').setAttribute('aria-label',locationTracker.running?'Stop GPS location':'Locate me');$('locate').title=locationTracker.running?'Stop GPS location':'Show my GPS location';
+  if(phase==='off')state.gpsFix=null;
+  $('gps-status').textContent=message;refreshCoordinates();scheduleDraw();
+  if(phase==='denied'||(phase==='unavailable'&&!locationTracker.running))toast(message);
+});
+function drawGPS(overlay,k){
+  if(!state.gpsFix||!locationTracker.running||!state.model)return;
+  const pos=pdfPosition(state.gpsFix);if(!pos)return;
+  const g=svg('g',{'clip-path':'url(#map-footprint)'}),[x,y]=pos.screen;
+  const points=accuracyRing(state.gpsFix).map(p=>pdfPosition(p)?.screen).filter(Boolean);
+  if(points.length>2)g.append(svg('polygon',{points:points.map(p=>p.join(',')).join(' '),fill:'#3389dc','fill-opacity':.12,stroke:'#3389dc','stroke-opacity':.4,'stroke-width':1/k}));
+  const title=svg('title');title.textContent=`GPS location · accuracy ±${Math.round(state.gpsFix.accuracy)} m`;
+  g.append(title,svg('circle',{cx:x,cy:y,r:7/k,fill:'#3389dc',stroke:'#fff','stroke-width':2.5/k}));overlay.append(g);
+}
+$('locate').addEventListener('click',()=>locationTracker.running?locationTracker.stop():locationTracker.start());
+window.addEventListener('pagehide',()=>locationTracker.stop());
+setInterval(()=>{if(locationTracker.running)refreshCoordinates();},10000);
 function cancelCapture(){state.capture=false;$('capture-hint').hidden=true;$('map-area').classList.remove('capturing');}
 function stopSession(){state.session?.abort();state.session=null;state.generation++;state.routes.clear();state.manifests={};state.routePending.clear();state.routeErrors.clear();state.group=null;state.layers=[];closeDetail();}
 function connectionLost(message){stopSession();state.mode='empty';status(message,'error');$('connect-label').textContent='Reconnect group';$('group-name').textContent='Group access ended';$('group-description').textContent='Shared features have been cleared. Ask the owner for a current Read-only invitation.';$('disconnect').hidden=true;remove('tw.portal.group.v1');reconcile();toast(message);}
@@ -199,10 +241,11 @@ $('connect-form').addEventListener('submit',async(e)=>{e.preventDefault();$('joi
 $('disconnect').addEventListener('click',()=>{stopSession();state.mode='empty';remove('tw.portal.group.v1');$('group-name').textContent='Your field, in view.';$('group-description').textContent='Open a PDF map and connect a TerraWarden group to bring your shared layers into focus.';$('connect-label').textContent='Connect group';$('disconnect').hidden=true;status('No group connected');reconcile();});
 const pointers=new Map();let gesture=null,clicked=null;
 const point=(e)=>{const r=$('map-area').getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top];};
+function updateCursor(p){if(state.model&&state.viewport){const raw=state.viewport.convertToPdfPoint((p[0]-state.x)/state.scale,(p[1]-state.y)/state.scale),geo=state.model.toGeo(...raw);if(raw[0]>=state.pageBox[0]&&raw[0]<=state.pageBox[2]&&raw[1]>=state.pageBox[1]&&raw[1]<=state.pageBox[3]&&inPolygon(raw,state.model.footprint)&&Math.abs(geo.latitude)<=90){state.readout={point:geo,source:'Map cursor'};const grid=formattedGrid(geo,state.crs);$('coordinate-status').textContent=grid?`Cursor · E ${grid.eastingText} · N ${grid.northingText}`:'Cursor outside supported grid';refreshCoordinates();}}}
 function beginGesture(){const values=[...pointers.values()];gesture=values.length>=2?{kind:'pinch',distance:Math.hypot(values[0][0]-values[1][0],values[0][1]-values[1][1]),center:[(values[0][0]+values[1][0])/2,(values[0][1]+values[1][1])/2],x:state.x,y:state.y,scale:state.scale}:{kind:'pan',point:values[0],x:state.x,y:state.y};}
 $('map-area').addEventListener('pointerdown',e=>{if(!state.viewport||e.button!==0||e.target.closest('button,.map-tools,.feature-detail,.map-topbar,.pin-marker,.route-line,.capture-hint'))return;pointers.set(e.pointerId,point(e));$('map-area').setPointerCapture(e.pointerId);clicked={point:point(e),moved:false};beginGesture();});
-$('map-area').addEventListener('pointermove',e=>{const p=point(e);if(state.model&&state.viewport){const raw=state.viewport.convertToPdfPoint((p[0]-state.x)/state.scale,(p[1]-state.y)/state.scale),geo=state.model.toGeo(...raw);if(Math.abs(geo.latitude)<=90)$('coordinate-status').textContent=`WGS84 · ${geo.latitude.toFixed(6)}, ${geo.longitude.toFixed(6)}`;}if(!pointers.has(e.pointerId)||!gesture)return;pointers.set(e.pointerId,p);if(clicked&&Math.hypot(p[0]-clicked.point[0],p[1]-clicked.point[1])>4)clicked.moved=true;if(gesture.kind==='pinch'&&pointers.size>=2){const[a,b]=[...pointers.values()],center=[(a[0]+b[0])/2,(a[1]+b[1])/2],distance=Math.hypot(a[0]-b[0],a[1]-b[1]);state.scale=Math.max(.03,Math.min(12,gesture.scale*distance/Math.max(1,gesture.distance)));state.x=center[0]-(gesture.center[0]-gesture.x)*state.scale/gesture.scale;state.y=center[1]-(gesture.center[1]-gesture.y)*state.scale/gesture.scale;if(clicked)clicked.moved=true;}else{state.x=gesture.x+p[0]-gesture.point[0];state.y=gesture.y+p[1]-gesture.point[1];}transform();});
-function endPointer(e){if(!pointers.has(e.pointerId))return;const p=point(e),pick=state.capture&&clicked&&!clicked.moved&&pointers.size===1&&e.type!=='pointercancel';pointers.delete(e.pointerId);if(pointers.size)beginGesture();else gesture=null;if(pick){const[x,y]=state.viewport.convertToPdfPoint((p[0]-state.x)/state.scale,(p[1]-state.y)/state.scale);if(x>=state.pageBox[0]&&x<=state.pageBox[2]&&y>=state.pageBox[1]&&y<=state.pageBox[3]){state.pendingAnchor={x,y};cancelCapture();$('anchor-form').reset();$('anchor-number').textContent=state.anchors.length+1;$('anchor-error').textContent='';$('anchor-dialog').showModal();}}clicked=null;}
+$('map-area').addEventListener('pointermove',e=>{const p=point(e);updateCursor(p);if(!pointers.has(e.pointerId)||!gesture)return;pointers.set(e.pointerId,p);if(clicked&&Math.hypot(p[0]-clicked.point[0],p[1]-clicked.point[1])>4)clicked.moved=true;if(gesture.kind==='pinch'&&pointers.size>=2){const[a,b]=[...pointers.values()],center=[(a[0]+b[0])/2,(a[1]+b[1])/2],distance=Math.hypot(a[0]-b[0],a[1]-b[1]);state.scale=Math.max(.03,Math.min(12,gesture.scale*distance/Math.max(1,gesture.distance)));state.x=center[0]-(gesture.center[0]-gesture.x)*state.scale/gesture.scale;state.y=center[1]-(gesture.center[1]-gesture.y)*state.scale/gesture.scale;if(clicked)clicked.moved=true;}else{state.x=gesture.x+p[0]-gesture.point[0];state.y=gesture.y+p[1]-gesture.point[1];}transform();});
+function endPointer(e){if(!pointers.has(e.pointerId))return;const p=point(e),pick=state.capture&&clicked&&!clicked.moved&&pointers.size===1&&e.type!=='pointercancel';pointers.delete(e.pointerId);if(pointers.size)beginGesture();else gesture=null;if(!pick&&clicked&&!clicked.moved&&e.type!=='pointercancel')updateCursor(p);if(pick){const[x,y]=state.viewport.convertToPdfPoint((p[0]-state.x)/state.scale,(p[1]-state.y)/state.scale);if(x>=state.pageBox[0]&&x<=state.pageBox[2]&&y>=state.pageBox[1]&&y<=state.pageBox[3]){state.pendingAnchor={x,y};cancelCapture();$('anchor-form').reset();$('anchor-number').textContent=state.anchors.length+1;$('anchor-error').textContent='';$('anchor-dialog').showModal();}}clicked=null;}
 $('map-area').addEventListener('pointerup',endPointer);$('map-area').addEventListener('pointercancel',endPointer);
 $('map-area').addEventListener('wheel',e=>{if(!state.viewport)return;e.preventDefault();zoom(Math.exp(-e.deltaY*.0015),point(e));},{passive:false});
 $('map-area').addEventListener('keydown',e=>{if(e.target.closest('input,select,button,[role=button]'))return;if(e.key==='+'||e.key==='='){e.preventDefault();zoom(1.25);}else if(e.key==='-'){e.preventDefault();zoom(.8);}else if(e.key==='0'){e.preventDefault();fit();}else if(e.key==='Escape'){cancelCapture();closeDetail();}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();state.x+=e.key==='ArrowLeft'?40:e.key==='ArrowRight'?-40:0;state.y+=e.key==='ArrowUp'?40:e.key==='ArrowDown'?-40:0;transform();}});

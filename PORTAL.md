@@ -9,7 +9,7 @@ A static, browser-based viewer for TerraWarden's existing Firebase `sharingV2` l
 3. Open the site's `/portal/` page.
 4. Choose **API key**, paste the TerraWarden Firebase API key, and choose **Save key**. The key is stored in this browser's local storage and survives reloads. It is deliberately absent from this package and needs to be entered on each browser/device. **Remove saved key** removes this saved value; clearing the site's browser data also removes it.
 5. In TerraWarden, the group owner sets its invitation permission to **Read-only** and shares the resulting invitation code or `terrawarden://join?code=…` link. Choose **Connect group**, enter a viewer name and the invitation, then **Join as viewer**.
-6. Open the corresponding PDF. Supported WGS84 GeoPDF pages align automatically; other PDFs need WGS84 reference points.
+6. Open the corresponding PDF. Supported GeoPDF pages align automatically, including WGS84, GDA94 / MGA, GDA2020 / MGA and NZGD2000 maps. Other PDFs need WGS84 reference points.
 
 The portal accepts viewer invitations only. Joining creates an anonymous browser identity and writes only that identity's own group membership. The member name appears in TerraWarden. Existing editor invitations must be replaced with a Read-only invitation; the portal does not change a group's invitation settings.
 
@@ -20,6 +20,9 @@ The key supplied in chat comes from the private iOS application's configuration.
 ## What works
 
 - Local PDF upload/drop, multi-page navigation, pan, wheel/pinch zoom and fit.
+- Automatic recognition of supported GeoPDF coordinate systems from EPSG metadata or ArcMap WKT, including reversed viewport bounds.
+- Easting and northing as the main readout, labelled with the map grid, datum and EPSG code; WGS84 latitude/longitude stays secondary. Pin details use the same grid.
+- Optional **Locate me** for live browser GPS, with a location dot, accuracy area, easting/northing and accuracy/age status. Location starts only when requested and is not sent to Firebase.
 - Live Firebase REST streams for group pins/layers and route manifests, automatic token refresh/reconnection, and immutable route-chunk downloads.
 - Shared pin details, route and drawn-line geometry, layer visibility, opacity, and feature search.
 - Tombstones and privacy-removal filters, route-revision checks, and clearing shared features when group access ends.
@@ -31,13 +34,21 @@ The key supplied in chat comes from the private iOS application's configuration.
 
 The app's shared records contain geographic coordinates; PDF anchors and local display styles are not synced. The browser must align its own PDF.
 
-Automatic alignment reads standard `/VP` + `/Measure` (`/Subtype /GEO`) objects, `/BBox`, `/LPTS`, `/GPTS` and `/Bounds`, including compressed PDF objects. It supports geographic WGS84 and projected WGS84 GCS metadata whose GPTS values are standard latitude/longitude. It uses a bilinear fit, supports rotated/cropped PDF pages and multiple map viewports, and clips overlays to the selected footprint. Regions with unsupported datums or unreliable control points are rejected rather than placed using guessed coordinates.
+Automatic alignment reads standard `/VP` + `/Measure` (`/Subtype /GEO`) objects, `/BBox`, `/LPTS`, `/GPTS` and `/Bounds`, including compressed PDF objects. It recognises WGS84, GDA94, GDA2020 and NZGD2000 geodetic metadata, including ArcMap WKT with no EPSG number. GPTS values are interpreted as geographic latitude/longitude in the declared source datum. ArcMap viewport bounds may be reversed in either axis; the signed LPTS-to-page mapping is preserved before the fitting domain is normalised. It uses a bilinear fit, supports rotated/cropped PDF pages and multiple map viewports, and clips overlays to the selected footprint. Regions with unsupported datums or unreliable control points are rejected rather than placed using guessed coordinates.
 
 For other pages, expand **Map alignment**, select **Pick reference point**, click a known point and enter its **WGS84 decimal-degree latitude and longitude**. Southern latitudes are negative. Repeat for at least three well-spaced, non-collinear points. The manual model is an affine geographic approximation suited to local maps. Four or more points provide a fit residual; three points cannot independently establish accuracy. Projected grid lines over large areas may need a proper datum/projection workflow beyond this starter.
 
 Manual reference points are saved in this browser against the PDF fingerprint and page. The PDF itself must be reopened after a reload. Save/load alignment JSON is available for the exact same PDF and page. Resetting **Use PDF alignment** removes manual points for that page.
 
-This starter does not automatically transform GDA94, GDA2020, NZGD2000 or unknown datums. Use verified WGS84 reference points for those PDFs. It also does not implement legacy TerraGo `/LGIDict` metadata, encrypted PDFs, KMZ/KML import, editing or document-bound drawings that the native app keeps local. PDF size is capped at 100 MB. Styles absent from native shared data are assigned locally.
+GDA94 ↔ GDA2020 uses the official EPSG:8048 conformal seven-parameter transformation. GPS WGS84 ↔ GDA2020 uses EPSG:8450’s approximate 3 m relationship; local distortion and coordinate epochs are not modelled. NZGD2000 uses the native app’s navigation approximation, without a deformation model. This is phone/browser navigation, not survey control. Unknown datums still need verified WGS84 reference points. The viewer does not implement legacy TerraGo `/LGIDict` metadata, encrypted PDFs, KMZ/KML import, editing or document-bound drawings that the native app keeps local. PDF size is capped at 100 MB. Styles absent from native shared data are assigned locally.
+
+## Easting, northing and GPS
+
+The coordinate card shows the current map cursor or selected pin. Choose **Locate me** (the crosshair in the map controls) to show live device GPS instead; approve the browser's location prompt if desired. Choose **Stop GPS location** to stop. GPS does not automatically restart after reloading.
+
+A recognised projected map keeps its fixed grid and zone, even near a zone boundary. For a geographic-only map, a compatible grid is derived from its centre; without a recognised map grid, WGS84 UTM is chosen for the position. The readout always labels the datum, zone/projection and EPSG code. Readouts outside the supported projection domain show no grid value. A map cursor is labelled as a cursor, not GPS. Approximate datum relationships are described under Map alignment and in the grid label tooltip.
+
+GPS accuracy is supplied by the browser. Stale fixes and off-page positions are identified; a failed or denied request never creates a fake position. GPS fixes remain in memory and are not shared or stored as pins.
 
 ## Data and browser storage
 
@@ -63,7 +74,7 @@ The automated tests need Node.js 22 or later and no package installation:
 npm test
 ```
 
-See `PORTAL-VALIDATION.md` for completed checks and the remaining live-service check.
+See `PORTAL-VALIDATION.md` for completed checks and the remaining live-service check. Projection and datum-transform reference values are independently checked against PROJ; public regression fixtures use synthetic maps, not uploaded customer/site PDFs.
 
 ## Included third-party libraries
 
