@@ -30,3 +30,12 @@ Live Firebase synchronization has not been exercised against a real group. End-t
 - 28 automated tests pass, including editor creation/movement, stale-edit rejection, viewer rejection, immutable line metadata, label pivot/zoom invariants and preference persistence.
 - Isolated Firebase Database/Auth emulators with the current private repository rules accepted layer/pin/line creation, pin movement, line edits/redrawing, deletion tombstones and contribution records, and rejected viewer writes and writes after a role downgrade. Production database rules were not changed.
 - Browser checks created a demo pin and line, verified a saved 45-degree label angle after reload, inspected dark mode, and measured the footer below the feature list on desktop and at a 393-pixel mobile viewport. Physical Safari/device checks remain outside this environment.
+
+## Theme contrast and PDF sharpness fixes
+
+- 31 automated tests pass. New checks cover device-resolution rendering at 1200% zoom, page-edge clipping, bounded canvas memory for large maps/screens, and cancellation so an old page cannot replace the current image.
+- Pin details, edit dialogs, errors, hover states and drop feedback use theme colours. Checked text in the pin details/editor/readout/footer exceeds 4.5:1 contrast in both themes; the lowest sampled ratio was 5.01:1 in light mode and 5.78:1 in dark mode.
+- At mobile CSS viewport widths of 320, 393 and 430 pixels, the theme SVG is centred to within 0.01 pixels and the header retains at least a 10-pixel gap after the wordmark. Pin panels follow the active theme.
+- The PDF renderer redraws the visible region after zooming/panning at the display's pixel density, with a 6-million-pixel/4096-pixel-side limit. The base image remains visible while a new crop renders. Superseded canvases are cancelled and released.
+- Browser checks verified detailed rendering with the demo at 584% and the supplied ArcMap PDF at 251%, including panning. The latter's GDA94/MGA50 automatic alignment remains intact. Uploaded maps are excluded from the public code.
+- Browser checks use Chrome with mobile CSS viewports; physical iOS Safari and device GPS remain untested.

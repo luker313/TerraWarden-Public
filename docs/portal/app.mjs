@@ -8,9 +8,11 @@ import { LocationTracker, accuracyRing } from './location.mjs';
 import { pinLabelPlacement } from './label-placement.mjs';
 import { createEditorUI } from './edit-ui.mjs';
 import { DemoClient } from './demo-client.mjs';
+import { PDFViewportRenderer } from './pdf-render.mjs';
 const $=(id)=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
 const state={layers:[],hidden:new Set(),routes:new Map(),manifests:{},group:null,mode:'empty',pdf:null,metadata:null,page:1,viewport:null,model:null,regions:[],anchors:[],capture:false,scale:1,x:0,y:0,selected:null,session:null,generation:0,pdfGeneration:0,pageGeneration:0,routePending:new Set(),routeErrors:new Set(),role:null,opacity:1,labelAngle:readLabelAngle(),crs:null,readout:null,gpsFix:null,gpsStatus:'off'};
 let toastTimer,dragDepth=0,drawRequest=0,client=null,demoClient=null;
+const pdfRenderer=new PDFViewportRenderer($('pdf-detail'));
 const saved=(key)=>{try{return JSON.parse(localStorage.getItem(key));}catch{return null;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{toast('Browser storage is unavailable. Changes will last for this visit.');}};
 const remove=(key)=>{try{localStorage.removeItem(key);}catch{}};
@@ -78,6 +80,7 @@ async function openBytes(bytes,name){
     if(bytes.byteLength>100*1024*1024)throw new Error('Choose a PDF smaller than 100 MB for this browser viewer.');
     const opened=await openPDF(bytes);
     if(generation!==state.pdfGeneration){await opened.pdf.destroy();return;}
+    pdfRenderer.clear();
     if(state.renderTask){state.renderTask.cancel();await state.renderTask.promise.catch(()=>{});}
     if(state.pdf)await state.pdf.destroy();
     state.pdf=opened.pdf;state.metadata=opened.metadata;state.page=1;state.pdfName=name;
@@ -88,16 +91,16 @@ async function openBytes(bytes,name){
 }
 async function displayPage(number){
   const generation=++state.pageGeneration;
-  closeDetail();cancelCapture();
+  closeDetail();cancelCapture();pdfRenderer.clear();
   try{
     if(state.renderTask){state.renderTask.cancel();await state.renderTask.promise.catch(()=>{});}
     const page=await state.pdf.getPage(number);if(generation!==state.pageGeneration)return;
-    const viewport=page.getViewport({scale:1}),scale=Math.min(2.5,3200/Math.max(viewport.width,viewport.height));
+    const viewport=page.getViewport({scale:1}),scale=Math.min(2,2048/Math.max(viewport.width,viewport.height),Math.sqrt(2_000_000/(viewport.width*viewport.height)));
     const canvas=node('canvas');canvas.id='pdf-canvas';canvas.width=Math.ceil(viewport.width*scale);canvas.height=Math.ceil(viewport.height*scale);canvas.style.width=viewport.width+'px';canvas.style.height=viewport.height+'px';
     state.renderTask=page.render({canvasContext:canvas.getContext('2d'),viewport:page.getViewport({scale})});
     await state.renderTask.promise;if(generation!==state.pageGeneration)return;
     state.page=number;state.viewport=viewport;state.pageBox=page.view;state.width=viewport.width;state.height=viewport.height;
-    $('pdf-canvas').replaceWith(canvas);$('stage').style.width=viewport.width+'px';$('stage').style.height=viewport.height+'px';$('overlay').setAttribute('width',viewport.width);$('overlay').setAttribute('height',viewport.height);$('overlay').setAttribute('viewBox',`0 0 ${viewport.width} ${viewport.height}`);
+    $('pdf-canvas').replaceWith(canvas);pdfRenderer.setPage(page);$('stage').style.width=viewport.width+'px';$('stage').style.height=viewport.height+'px';$('overlay').setAttribute('width',viewport.width);$('overlay').setAttribute('height',viewport.height);$('overlay').setAttribute('viewBox',`0 0 ${viewport.width} ${viewport.height}`);
     const detected=geoPDFRegions(state.metadata,number-1);state.regions=detected.regions;state.alignmentMessage=detected.message;
     $('region-select').replaceChildren(...state.regions.map((r,i)=>{const o=node('option','',r.name);o.value=i;return o;}));$('region-field').hidden=state.regions.length<2;
     const stored=saved(calibrationKey());state.anchors=Array.isArray(stored)?stored:[];
@@ -105,7 +108,7 @@ async function displayPage(number){
   }catch(e){if(e.name!=='RenderingCancelledException')toast(`This page could not be rendered. ${e.message}`);}
 }
 function fit(){if(!state.viewport)return;const rect=$('map-area').getBoundingClientRect();state.scale=Math.min((rect.width-80)/state.width,(rect.height-145)/state.height);state.scale=Math.max(.03,state.scale);state.x=(rect.width-state.width*state.scale)/2;state.y=70+(rect.height-145-state.height*state.scale)/2;transform();}
-function transform(){if(!state.viewport)return;$('stage').style.transform=`translate(${state.x}px,${state.y}px) scale(${state.scale})`;$('zoom-label').textContent=Math.round(state.scale*100)+'%';scheduleDraw();}
+function transform(){if(!state.viewport)return;$('stage').style.transform=`translate(${state.x}px,${state.y}px) scale(${state.scale})`;$('zoom-label').textContent=Math.round(state.scale*100)+'%';const rect=$('map-area').getBoundingClientRect();pdfRenderer.schedule({pageWidth:state.width,pageHeight:state.height,width:rect.width,height:rect.height,x:state.x,y:state.y,scale:state.scale,dpr:window.devicePixelRatio||1});scheduleDraw();}
 function zoom(factor,point){if(!state.viewport)return;const rect=$('map-area').getBoundingClientRect(),p=point||[rect.width/2,rect.height/2];const next=Math.max(.03,Math.min(12,state.scale*factor));state.x=p[0]-(p[0]-state.x)*next/state.scale;state.y=p[1]-(p[1]-state.y)*next/state.scale;state.scale=next;transform();}
 function scheduleDraw(){if(!drawRequest)drawRequest=requestAnimationFrame(()=>{drawRequest=0;drawOverlay();});}
 function pdfPosition(feature){const p=state.model?.toPDF(feature.latitude,feature.longitude);return p?{pdf:p,screen:state.viewport.convertToViewportPoint(...p)}:null;}
@@ -227,7 +230,7 @@ $('pdf-upload').addEventListener('change',async(e)=>{const f=e.target.files[0];i
 $('page-select').addEventListener('change',e=>displayPage(Number(e.target.value)));
 $('region-select').addEventListener('change',updateAlignment);
 $('search').addEventListener('input',()=>{renderLists();scheduleDraw();});
-function setTheme(theme){document.documentElement.dataset.theme=theme;const dark=theme==='dark';$('theme-toggle').textContent=dark?'☀':'☾';$('theme-toggle').setAttribute('aria-pressed',String(dark));$('theme-toggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('theme-toggle').title=dark?'Switch to light mode':'Switch to dark mode';document.querySelector('meta[name="theme-color"]').content=dark?'#101914':'#f7f8f3';}
+function setTheme(theme){document.documentElement.dataset.theme=theme;const dark=theme==='dark';$('theme-toggle').setAttribute('aria-pressed',String(dark));$('theme-toggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('theme-toggle').title=dark?'Switch to light mode':'Switch to dark mode';document.querySelector('meta[name="theme-color"]').content=dark?'#101914':'#f7f8f3';}
 setTheme(document.documentElement.dataset.theme||'light');
 $('theme-toggle').addEventListener('click',()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';setTheme(theme);try{saveTheme(theme);}catch{toast('Theme changed for this visit. Browser storage is unavailable.');}});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',e=>{if(!readTheme())setTheme(e.matches?'dark':'light');});
