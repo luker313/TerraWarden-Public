@@ -39,3 +39,5 @@ body{height:100vh;height:100dvh;display:flex;flex-direction:column}
 #sidebar-toggle{padding:0;width:28px;height:32px;line-height:1;flex-shrink:0}
 .app-header{gap:10px}
 @media(max-width:650px){.header-actions>#key-settings{padding:0;white-space:nowrap;flex-shrink:0}}
+/* Focus must not scroll the transformed map underneath its fixed controls. */
+.map-area{overflow:clip}

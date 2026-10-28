@@ -39,3 +39,4 @@ Live Firebase synchronization has not been exercised against a real group. End-t
 - The PDF renderer redraws the visible region after zooming/panning at the display's pixel density, with a 6-million-pixel/4096-pixel-side limit. The base image remains visible while a new crop renders. Superseded canvases are cancelled and released.
 - Browser checks verified detailed rendering with the demo at 584% and the supplied ArcMap PDF at 251%, including panning. The latter's GDA94/MGA50 automatic alignment remains intact. Uploaded maps are excluded from the public code.
 - Browser checks use Chrome with mobile CSS viewports; physical iOS Safari and device GPS remain untested.
+- The map viewport clips transformed content without becoming a scroll container, so focusing zoom tools or off-screen features cannot scroll the floating controls or pin panel out of position.
