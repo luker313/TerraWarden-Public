@@ -191,7 +191,7 @@ function drawGPS(overlay,k){
   const title=svg('title');title.textContent=`GPS location · accuracy ±${Math.round(state.gpsFix.accuracy)} m`;
   g.append(title,svg('circle',{cx:x,cy:y,r:7/k,fill:'#3389dc',stroke:'#fff','stroke-width':2.5/k}));overlay.append(g);
 }
-$('locate').addEventListener('click',()=>{if(!locationTracker.running){state.gpsFollowing=true;locationTracker.start();}else if(!state.gpsFollowing){state.gpsFollowing=true;updateGPSButton();refreshCoordinates();transform();}else locationTracker.stop();});
+$('locate').addEventListener('click',()=>{if(!locationTracker.running||!state.gpsFollowing){closeDetail();document.body.classList.remove('sidebar-open');$('sidebar-toggle').setAttribute('aria-expanded','false');}if(!locationTracker.running){state.gpsFollowing=true;locationTracker.start();}else if(!state.gpsFollowing){state.gpsFollowing=true;updateGPSButton();refreshCoordinates();transform();}else locationTracker.stop();});
 window.addEventListener('pagehide',()=>locationTracker.stop());
 setInterval(()=>{if(locationTracker.running)refreshCoordinates();},10000);
 function cancelCapture(){state.capture=false;$('capture-hint').hidden=true;$('map-area').classList.remove('capturing');}
