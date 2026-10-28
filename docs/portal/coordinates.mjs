@@ -76,6 +76,18 @@ export function formattedGrid(point,preferred) {
   const format=n=>n.toLocaleString('en-AU',{minimumFractionDigits:1,maximumFractionDigits:1});
   return {...grid,eastingText:format(grid.easting),northingText:format(grid.northing),label:`${grid.crs.label} · EPSG:${grid.crs.epsg}`};
 }
+export function inverseGrid(easting,northing,crs){
+  if(!crs||![easting,northing].every(Number.isFinite)||Math.abs(easting)>5e7||Math.abs(northing)>5e7)return null;
+  let latitude=Math.max(-79.9,Math.min(83.9,(northing-crs.falseNorthing)/111100)),longitude=crs.meridian+(easting-crs.falseEasting)/(111320*Math.cos(latitude*Math.PI/180));
+  for(let i=0;i<15;i++){
+    const p=projectGeographic({latitude,longitude},crs);if(!p)return null;
+    const e=p.easting-easting,n=p.northing-northing;if(Math.hypot(e,n)<.0001)return toWGS84({latitude,longitude},crs.datum);
+    const step=1e-5,a=projectGeographic({latitude:latitude+step,longitude},crs),b=projectGeographic({latitude,longitude:longitude+step},crs);if(!a||!b)return null;
+    const dx=(a.easting-p.easting)/step,dy=(b.easting-p.easting)/step,nx=(a.northing-p.northing)/step,ny=(b.northing-p.northing)/step,det=dx*ny-dy*nx;
+    if(Math.abs(det)<1e-8)return null;latitude-=(ny*e-dy*n)/det;longitude-=(dx*n-nx*e)/det;
+  }
+  return null;
+}
 
 export function identifyMapCRS(epsg,wkt='') {
   let datum=null,crs=null;

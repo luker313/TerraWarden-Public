@@ -1,6 +1,6 @@
 # TerraWarden layer portal
 
-A static, browser-based viewer for TerraWarden's existing Firebase `sharingV2` layers over a locally opened PDF. Designed for the `luker313/TerraWarden-Public` GitHub Pages site.
+A static, browser-based portal for TerraWarden's existing Firebase `sharingV2` layers over a locally opened PDF. Designed for the `luker313/TerraWarden-Public` GitHub Pages site.
 
 ## Install on the existing GitHub Pages site
 
@@ -8,10 +8,10 @@ A static, browser-based viewer for TerraWarden's existing Firebase `sharingV2` l
 2. Keep GitHub Pages set to `main` and `/docs`. Commit the new portal folder. No build step is required.
 3. Open the site's `/portal/` page.
 4. Choose **API key**, paste the TerraWarden Firebase API key, and choose **Save key**. The key is stored in this browser's local storage and survives reloads. It is deliberately absent from this package and needs to be entered on each browser/device. **Remove saved key** removes this saved value; clearing the site's browser data also removes it.
-5. In TerraWarden, the group owner sets its invitation permission to **Read-only** and shares the resulting invitation code or `terrawarden://join?code=…` link. Choose **Connect group**, enter a viewer name and the invitation, then **Join as viewer**.
+5. In TerraWarden, the group owner shares an **edit** or **Read-only** invitation code or `terrawarden://join?code=…` link. Choose **Connect group**, enter a viewer name and the invitation, then **Connect group**.
 6. Open the corresponding PDF. Supported GeoPDF pages align automatically, including WGS84, GDA94 / MGA, GDA2020 / MGA and NZGD2000 maps. Other PDFs need WGS84 reference points.
 
-The portal accepts viewer invitations only. Joining creates an anonymous browser identity and writes only that identity's own group membership. The member name appears in TerraWarden. Existing editor invitations must be replaced with a Read-only invitation; the portal does not change a group's invitation settings.
+Viewer codes allow viewing. Edit codes allow creating layers, adding and moving pins, drawing lines, editing metadata, redrawing lines, and deleting features. Browser membership and Firebase rules determine the effective role. If this browser is already a viewer, entering an edit code offers **Rejoin with edit code** to replace only its own membership; other members and group data are retained. A live role downgrade disables editing. Edits require a connection, and unsaved drafts remain only in this tab.
 
 The database address is in `docs/portal/config.js`. **Never add an API key, service-account file, database secret, token or user data to that file or the repository.** The user-entered key is used in browser-to-Google requests. Its browser-side storage does not make it a secret from someone using that same browser.
 
@@ -40,7 +40,7 @@ For other pages, expand **Map alignment**, select **Pick reference point**, clic
 
 Manual reference points are saved in this browser against the PDF fingerprint and page. The PDF itself must be reopened after a reload. Save/load alignment JSON is available for the exact same PDF and page. Resetting **Use PDF alignment** removes manual points for that page.
 
-GDA94 ↔ GDA2020 uses the official EPSG:8048 conformal seven-parameter transformation. GPS WGS84 ↔ GDA2020 uses EPSG:8450’s approximate 3 m relationship; local distortion and coordinate epochs are not modelled. NZGD2000 uses the native app’s navigation approximation, without a deformation model. This is phone/browser navigation, not survey control. Unknown datums still need verified WGS84 reference points. The viewer does not implement legacy TerraGo `/LGIDict` metadata, encrypted PDFs, KMZ/KML import, editing or document-bound drawings that the native app keeps local. PDF size is capped at 100 MB. Styles absent from native shared data are assigned locally.
+GDA94 ↔ GDA2020 uses the official EPSG:8048 conformal seven-parameter transformation. GPS WGS84 ↔ GDA2020 uses EPSG:8450’s approximate 3 m relationship; local distortion and coordinate epochs are not modelled. NZGD2000 uses the native app’s navigation approximation, without a deformation model. This is phone/browser navigation, not survey control. Unknown datums still need verified WGS84 reference points. The viewer does not implement legacy TerraGo `/LGIDict` metadata, encrypted PDFs, KMZ/KML import or document-bound drawings that the native app keeps local. PDF size is capped at 100 MB. Styles absent from native shared data are assigned locally.
 
 ## Easting, northing and GPS
 
@@ -56,7 +56,7 @@ GPS accuracy is supplied by the browser. Stale fixes and off-page positions are 
 - The entered API key, anonymous refresh credential, viewer name, last group and PDF reference points are stored on this site's browser origin. Access tokens stay in memory. Shared layer geometry is not deliberately written to local storage.
 - The browser is a separate viewer identity from the phone. Clearing browser data loses that identity. The group owner can remove the old browser member in TerraWarden.
 - **Disconnect** stops viewing and clears displayed shared data and the remembered group. It keeps the API key and identity for later use and does not delete the server-side membership. The owner manages that membership in the app.
-- No analytics, external fonts, CDN scripts or server component are used. PDF dependencies are included locally.
+- No analytics, external fonts, CDN scripts or new server component are used. Editor operations use the existing Firebase rules, contribution records, immutable geometry chunks and conditional versions. PDF dependencies are included locally.
 
 ## Local preview and validation
 
@@ -82,3 +82,14 @@ See `PORTAL-VALIDATION.md` for completed checks and the remaining live-service c
 - `pdf-lib` **1.17.1**, MIT: GeoPDF object/metadata inspection. License: `docs/portal/vendor/PDF-LIB-LICENSE.md`.
 
 References: [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages), [Firebase REST database and streams](https://firebase.google.com/docs/reference/rest/database), [Firebase REST authentication](https://firebase.google.com/docs/reference/rest/auth), [PDF.js](https://mozilla.github.io/pdf.js/).
+
+
+## Theme, labels and editing
+
+Use the sun/moon button in the header to switch light/dark mode. The initial theme follows the system; a chosen theme is remembered. PDF artwork retains its original colours. Under Layers, **Pin text angle** rotates all pin labels around their own pin positions from -180° to +180°. The angle is saved in this browser; **Reset text angle** restores 0°.
+
+Editors can use **New layer**, **Add pin** and **Draw line**. Click the aligned map to position a pin or add line vertices, then finish and save. Pins can also be positioned with the displayed grid's easting/northing or WGS84 latitude/longitude. Select a feature for Edit/Delete; drawn lines also offer Redraw line. Existing recorded routes support metadata edits but are not converted to drawn lines. Layer names are edited with the pencil beside the layer.
+
+Writes register contribution and upload ownership records for the existing privacy/deletion service. Version checks reject stale changes rather than overwriting a newer device edit. Deletions are native-compatible tombstones. Published geometry is immutable; redrawing creates a replacement line and removes the original. Failed replacement cleanup is reported explicitly. The demo supports these controls in memory only, without contacting Firebase. The API key remains user-entered and excluded from source.
+
+The sidebar scrolls as one column; sections cannot shrink below their contents, so the footer follows the final feature on desktop and mobile.

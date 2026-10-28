@@ -1,0 +1,2 @@
+// Runs before styles are painted, including when the OS prefers dark mode.
+(()=>{let theme;try{theme=JSON.parse(localStorage.getItem('tw.portal.theme'));}catch{}if(!['light','dark'].includes(theme))theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;document.querySelector('meta[name="theme-color"]')?.setAttribute('content',theme==='dark'?'#101914':'#f7f8f3');})();

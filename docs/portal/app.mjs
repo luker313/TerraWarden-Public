@@ -1,13 +1,16 @@
 import { config } from './config.js';
-import { readAPIKey, saveAPIKey, removeAPIKey } from './settings.mjs';
+import { readAPIKey, saveAPIKey, removeAPIKey, readTheme, saveTheme, readLabelAngle, saveLabelAngle } from './settings.mjs';
 import { makeModel, decodeGroup, decodeRoute, inPolygon, swiftDate } from './core.mjs';
 import { openPDF, geoPDFRegions } from './pdf-map.mjs';
 import { ViewerClient } from './firebase.mjs';
 import { formattedGrid, datumNote } from './coordinates.mjs';
 import { LocationTracker, accuracyRing } from './location.mjs';
+import { pinLabelPlacement } from './label-placement.mjs';
+import { createEditorUI } from './edit-ui.mjs';
+import { DemoClient } from './demo-client.mjs';
 const $=(id)=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
-const state={layers:[],hidden:new Set(),routes:new Map(),manifests:{},group:null,mode:'empty',pdf:null,metadata:null,page:1,viewport:null,model:null,regions:[],anchors:[],capture:false,scale:1,x:0,y:0,selected:null,session:null,generation:0,pdfGeneration:0,pageGeneration:0,routePending:new Set(),routeErrors:new Set(),opacity:1,crs:null,readout:null,gpsFix:null,gpsStatus:'off'};
-let toastTimer,dragDepth=0,drawRequest=0,client=null;
+const state={layers:[],hidden:new Set(),routes:new Map(),manifests:{},group:null,mode:'empty',pdf:null,metadata:null,page:1,viewport:null,model:null,regions:[],anchors:[],capture:false,scale:1,x:0,y:0,selected:null,session:null,generation:0,pdfGeneration:0,pageGeneration:0,routePending:new Set(),routeErrors:new Set(),role:null,opacity:1,labelAngle:readLabelAngle(),crs:null,readout:null,gpsFix:null,gpsStatus:'off'};
+let toastTimer,dragDepth=0,drawRequest=0,client=null,demoClient=null;
 const saved=(key)=>{try{return JSON.parse(localStorage.getItem(key));}catch{return null;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{toast('Browser storage is unavailable. Changes will last for this visit.');}};
 const remove=(key)=>{try{localStorage.removeItem(key);}catch{}};
@@ -17,7 +20,8 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function status(message,type='neutral'){$('sync-status').textContent=message;$('sync-dot').className=`status-dot ${type}`;}
 function notice(message){$('map-notice').textContent=message;$('map-notice').hidden=!message;}
 const calibrationKey=()=>`tw.portal.alignment.v1.${state.pdf?.fingerprints?.[0]}.${state.page}`;
-function allFeatures(){return state.layers.flatMap(l=>[...l.pins,...l.routes].map(f=>({...f,layerName:l.name,color:l.color})));}
+const drawingColours={green:'#36a447',red:'#d25252',blue:'#3a85c6',yellow:'#d4be42',purple:'#946ca8',orange:'#d68c46',white:'#ffffff',black:'#202b25'};
+function allFeatures(){return state.layers.flatMap(l=>[...l.pins,...l.routes].map(f=>({...f,layerName:l.name,color:drawingColours[f.drawingAppearance?.color]||l.color})));}
 const matches=(f)=>!$('search').value.trim()||[f.name,f.note,f.unitID,f.mineSite,f.layerName].some(s=>String(s||'').toLocaleLowerCase().includes($('search').value.trim().toLocaleLowerCase()));
 function visibleFeatures(){return allFeatures().filter(f=>!state.hidden.has(f.layerID)&&matches(f));}
 function reconcile(){
@@ -26,7 +30,8 @@ function reconcile(){
     const removed=state.group.privacyRemovals||{};
     for(const l of state.layers) l.routes=[...state.routes.values()].filter(r=>r.layerID===l.id&&!removed.routes?.[r.id]&&state.manifests[r.id]?.isDeleted===false&&state.manifests[r.id]?.revision===r.revision);
   }
-  renderLists();scheduleDraw();
+  state.role=state.group?.members?.[(state.mode==='demo'?demoClient:client)?.uid]?.role||null;
+  renderLists();editorUI.refresh();scheduleDraw();
   if(state.selected){const current=allFeatures().find(f=>f.id===state.selected);if(current&&!state.hidden.has(current.layerID))showDetail(current,false);else closeDetail();}
 }
 function renderLists(){
@@ -36,7 +41,7 @@ function renderLists(){
   for(const l of state.layers){
     const row=node('div','layer-row'),swatch=node('span','layer-swatch','⌖');swatch.style.color=l.color;swatch.style.background=l.color+'15';
     const label=node('label'),name=node('span','layer-name',l.name),meta=node('span','layer-meta',`${l.pins.length} pins · ${l.routes.length} routes / lines`),check=node('input');check.type='checkbox';check.checked=!state.hidden.has(l.id);check.setAttribute('aria-label',`Show ${l.name}`);
-    const inputID=`layer-${state.layers.indexOf(l)}`;check.id=inputID;label.htmlFor=inputID;label.append(name,meta);row.append(swatch,label,check);layers.append(row);
+    const inputID=`layer-${state.layers.indexOf(l)}`;check.id=inputID;label.htmlFor=inputID;label.append(name,meta);row.append(swatch,label);if(editorUI.writable()){const edit=node('button','layer-edit','✎');edit.setAttribute('aria-label',`Edit layer ${l.name}`);edit.addEventListener('click',()=>editorUI.editLayer(l));row.append(edit);}row.append(check);layers.append(row);
     check.addEventListener('change',()=>{check.checked?state.hidden.delete(l.id):state.hidden.add(l.id);if(state.selected&&allFeatures().some(f=>f.id===state.selected&&f.layerID===l.id)&&!check.checked)closeDetail();renderLists();scheduleDraw();});
   }
   const all=allFeatures(),features=visibleFeatures(),list=$('features');$('feature-count').textContent=all.length;list.replaceChildren();
@@ -117,31 +122,31 @@ function drawOverlay(){
         const pos=pdfPosition(f);if(!pos||!inPolygon(pos.pdf,footprint))continue;
         const [x,y]=pos.screen;if(x<0||y<0||x>state.width||y>state.height)continue;
         const g=svg('g',{class:'pin-marker',role:'button',tabindex:'0','aria-label':f.name});const title=svg('title');title.textContent=f.name;g.append(title,svg('circle',{cx:x,cy:y,r:r+3/k,fill:'#fff',opacity:'.7'}),svg('circle',{cx:x,cy:y,r,fill:f.color,stroke:'#fff','stroke-width':1.8/k}));
-        if(showLabels){const text=svg('text',{x:x+10/k,y:y+3/k,fill:'#344b2c','font-size':10/k,'font-weight':550,stroke:'#fff','stroke-width':2.5/k,'paint-order':'stroke','stroke-linejoin':'round'});text.textContent=f.name.length>35?f.name.slice(0,33)+'…':f.name;g.append(text);}
-        g.addEventListener('click',()=>showDetail(f,false));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showDetail(f,false);}});features.append(g);shown++;
+        if(showLabels){const text=svg('text',{...pinLabelPlacement(x,y,k,state.labelAngle),fill:'#344b2c','font-size':10/k,'font-weight':550,stroke:'#fff','stroke-width':2.5/k,'paint-order':'stroke','stroke-linejoin':'round'});text.textContent=f.name.length>35?f.name.slice(0,33)+'…':f.name;g.append(text);}
+        g.addEventListener('click',()=>{if(!editorUI.active()&&!state.capture)showDetail(f,false);});g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showDetail(f,false);}});features.append(g);shown++;
       }else{
         const commands=[];let bounds=[Infinity,Infinity,-Infinity,-Infinity];
         for(const segment of f.segments){let pen=false;for(const point of segment.points){const pos=pdfPosition(point);if(!pos){pen=false;continue;}const[x,y]=pos.screen;bounds=[Math.min(bounds[0],x),Math.min(bounds[1],y),Math.max(bounds[2],x),Math.max(bounds[3],y)];commands.push(`${pen?'L':'M'}${x.toFixed(3)} ${y.toFixed(3)}`);pen=true;}}
         if(!commands.length||bounds[2]<0||bounds[3]<0||bounds[0]>state.width||bounds[1]>state.height)continue;
         const dash=f.drawingAppearance?.lineStyle==='dashed'?`${8/k} ${6/k}`:f.drawingAppearance?.lineStyle==='dotted'?`${1/k} ${5/k}`:null;
         const color=f.color,width=(f.drawingAppearance?.lineWidth==='thin'?2:f.drawingAppearance?.lineWidth==='thick'?6:3)/k;
-        const g=svg('g',{class:'route-line',role:'button',tabindex:'0','aria-label':f.name}),title=svg('title');title.textContent=f.name;g.append(title,svg('path',{d:commands.join(' '),fill:'none',stroke:'#fff','stroke-width':width+3/k,'stroke-linejoin':'round','stroke-linecap':'round'}));
-        const path=svg('path',{d:commands.join(' '),fill:'none',stroke:color,'stroke-width':width,'stroke-linejoin':'round','stroke-linecap':'round'});if(dash)path.setAttribute('stroke-dasharray',dash);g.append(path,svg('path',{d:commands.join(' '),fill:'none',stroke:'transparent','stroke-width':Math.max(width,12/k)}));g.addEventListener('click',()=>showDetail(f,false));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showDetail(f,false);}});features.prepend(g);shown++;
+        const g=svg('g',{class:'route-line',role:'button',tabindex:'0','aria-label':f.name}),title=svg('title');title.textContent=f.name;g.append(title,svg('path',{d:commands.join(' '),fill:'none',stroke:color==='#ffffff'?'#29402f':'#fff','stroke-width':width+3/k,'stroke-linejoin':'round','stroke-linecap':'round'}));
+        const path=svg('path',{d:commands.join(' '),fill:'none',stroke:color,'stroke-width':width,'stroke-linejoin':'round','stroke-linecap':'round'});if(dash)path.setAttribute('stroke-dasharray',dash);g.append(path,svg('path',{d:commands.join(' '),fill:'none',stroke:'transparent','stroke-width':Math.max(width,12/k)}));g.addEventListener('click',()=>{if(!editorUI.active()&&!state.capture)showDetail(f,false);});g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showDetail(f,false);}});features.prepend(g);shown++;
       }
     }
   }
   state.anchors.forEach((a,i)=>{const[x,y]=state.viewport.convertToViewportPoint(a.x,a.y),g=svg('g');g.append(svg('circle',{cx:x,cy:y,r:9/k,fill:'#234d3a',stroke:'#fff','stroke-width':2/k}));const text=svg('text',{x,y:y+3/k,'text-anchor':'middle',fill:'#fff','font-size':10/k});text.textContent=i+1;g.append(text);overlay.append(g);});
-  drawGPS(overlay,k);
+  drawGPS(overlay,k);editorUI.draw(overlay,k,svg,pdfPosition);
   $('visibility-status').textContent=state.model?`${shown} of ${visibleFeatures().length} features intersect this page`:allFeatures().length?'Align the map to place shared features':'Ready when you are';
 }
-function closeDetail(){state.selected=null;$('feature-detail').hidden=true;}
+function closeDetail(){state.selected=null;$('feature-detail').hidden=true;$('feature-edit-actions').hidden=true;}
 function showDetail(f,center){
   state.selected=f.id;$('detail-kind').textContent=`${f.type} · ${f.layerName}`;$('detail-title').textContent=f.name;$('detail-fields').replaceChildren();
   const grid=f.type==='pin'?formattedGrid(f,state.crs):null;
   const date=swiftDate(f.timestamp??f.createdAt??f.startedAt),fields=[['Easting',grid?grid.eastingText+' m':null],['Northing',grid?grid.northingText+' m':null],['Coordinate system',grid?.label],['Unit ID',f.unitID],['Site',f.mineSite],['WGS84 latitude / longitude',f.type==='pin'?`${f.latitude.toFixed(7)}, ${f.longitude.toFixed(7)}`:null],['Distance',f.distanceMeters!=null?`${(f.distanceMeters/1000).toFixed(3)} km`:null],['Recorded',date&&!isNaN(date)?date.toLocaleString():null],['Created by',f.creatorName],['Note',f.note]];
   for(const[label,value]of fields)if(value){const cls=['Easting','Northing'].includes(label)?'grid-field':'';$('detail-fields').append(node('dt',cls,label),node('dd',cls,String(value)));}
   if(!$('detail-fields').children.length)$('detail-fields').append(node('dd','', 'No additional details.'));
-  $('feature-detail').hidden=false;
+  $('feature-detail').hidden=false;editorUI.refresh();
   if(f.type==='pin'){state.readout={point:f,source:'Selected pin'};refreshCoordinates();}
   if(center&&state.model){const point=f.type==='pin'?f:f.segments.flatMap(s=>s.points)[0],pos=point&&pdfPosition(point);if(pos){const rect=$('map-area').getBoundingClientRect();state.scale=Math.max(state.scale,1.1);state.x=rect.width*.4-pos.screen[0]*state.scale;state.y=rect.height*.5-pos.screen[1]*state.scale;transform();}}
 }
@@ -179,17 +184,17 @@ $('locate').addEventListener('click',()=>locationTracker.running?locationTracker
 window.addEventListener('pagehide',()=>locationTracker.stop());
 setInterval(()=>{if(locationTracker.running)refreshCoordinates();},10000);
 function cancelCapture(){state.capture=false;$('capture-hint').hidden=true;$('map-area').classList.remove('capturing');}
-function stopSession(){state.session?.abort();state.session=null;state.generation++;state.routes.clear();state.manifests={};state.routePending.clear();state.routeErrors.clear();state.group=null;state.layers=[];closeDetail();}
-function connectionLost(message){stopSession();state.mode='empty';status(message,'error');$('connect-label').textContent='Reconnect group';$('group-name').textContent='Group access ended';$('group-description').textContent='Shared features have been cleared. Ask the owner for a current Read-only invitation.';$('disconnect').hidden=true;remove('tw.portal.group.v1');reconcile();toast(message);}
+function stopSession(){editorUI.reset();state.role=null;state.activeGroup=null;state.session?.abort();state.session=null;state.generation++;state.routes.clear();state.manifests={};state.routePending.clear();state.routeErrors.clear();state.group=null;state.layers=[];closeDetail();}
+function connectionLost(message){stopSession();state.mode='empty';status(message,'error');$('connect-label').textContent='Reconnect group';$('group-name').textContent='Group access ended';$('group-description').textContent='Shared features have been cleared. Ask the owner for a current invitation.';$('disconnect').hidden=true;remove('tw.portal.group.v1');reconcile();toast(message);}
 async function openGroup(group){
   stopSession();state.mode='live';state.session=new AbortController();const signal=state.session.signal,generation=state.generation;
-  $('group-name').textContent=group.name||'Shared group';$('group-description').textContent='Live shared pins, recorded routes and drawn lines. Your PDF and map alignment stay on this device.';$('connect-label').textContent='Connected group';$('disconnect').hidden=false;status('Connecting to live layers…');
+  $('group-name').textContent=group.name||'Shared group';$('group-description').textContent='Live shared pins, recorded routes and drawn lines. Your PDF and map alignment stay on this device.';$('connect-label').textContent='Connected group';state.activeGroup=group;$('disconnect').hidden=false;status('Connecting to live layers…');
   const channel={pins:'connecting',routes:'connecting'};
-  const updateStatus=()=>{if(generation!==state.generation)return;status(state.routeErrors.size?'Some routes could not be loaded':channel.pins==='live'&&channel.routes==='live'?'Live sync · read-only':channel.pins==='live'?'Pins connected · routes connecting':'Reconnecting · last received data',channel.pins==='live'?'':'neutral');};
+  const updateStatus=()=>{if(generation!==state.generation)return;status(state.routeErrors.size?'Some routes could not be loaded':channel.pins==='live'&&channel.routes==='live'?`Live sync · ${state.role==='viewer'?'read-only':'can edit'}`:channel.pins==='live'?'Pins connected · routes connecting':'Reconnecting · last received data',channel.pins==='live'?'':'neutral');};
   const routesChanged=()=>{if(generation===state.generation){loadRoutes(generation,signal).catch(e=>toast(e.message));reconcile();}};
   client.watch(`pinGroups/${group.id}`,value=>{
     if(generation!==state.generation)return;
-    if(value?.isDeleted!==false || value.members?.[client.uid]?.role!=='viewer'){connectionLost('This browser no longer has Read-only access to the group.');return;}
+    if(value?.isDeleted!==false || !['viewer','editor','owner'].includes(value.members?.[client.uid]?.role)){connectionLost('This browser no longer has access to the group.');return;}
     state.group=value;$('group-name').textContent=value.name||'Shared group';reconcile();routesChanged();
   },(s,e)=>{if(generation!==state.generation)return;channel.pins=s;if(s==='denied')connectionLost(e.message);else updateStatus();},signal).catch(()=>{});
   client.watch(`routeManifests/${group.id}`,value=>{
@@ -214,14 +219,21 @@ async function loadRoutes(generation,signal){
   await Promise.all([worker(),worker(),worker()]);
 }
 async function demo(){
-  stopSession();state.mode='demo';state.hidden.clear();remove('tw.portal.group.v1');$('disconnect').hidden=false;$('group-name').textContent='Redridge field survey';$('group-description').textContent='A fictional survey workspace. Try the layer toggles, inspect a pin and explore the map.';$('connect-label').textContent='Connect your group';status('Demo data · no cloud connection');
-  try{const data=await(await fetch('./demo.json')).json();state.group=data.group;state.manifests=data.manifests;for(const[id,m]of Object.entries(data.manifests))state.routes.set(id,decodeRoute(data.geometry[id],m,id));reconcile();await openBytes(new Uint8Array(await(await fetch('./demo.pdf')).arrayBuffer()),'Redridge survey · demo.pdf');}catch(e){toast(`Demo could not be opened. ${e.message}`);}
+  stopSession();state.mode='demo';state.hidden.clear();remove('tw.portal.group.v1');$('disconnect').hidden=false;$('group-name').textContent='Redridge field survey';$('group-description').textContent='A fictional workspace. Add pins, draw lines and try editing. Demo changes stay in this tab.';$('connect-label').textContent='Connect your group';status('Demo data · no cloud connection');
+  try{const data=await(await fetch('./demo.json')).json();demoClient=new DemoClient(data);demoClient.onChange=rebuildDemo;state.activeGroup={id:demoClient.groupID,name:'Redridge field survey'};rebuildDemo();await openBytes(new Uint8Array(await(await fetch('./demo.pdf')).arrayBuffer()),'Redridge survey · demo.pdf');}catch(e){toast(`Demo could not be opened. ${e.message}`);}
 }
 $('demo').addEventListener('click',demo);$('demo-empty').addEventListener('click',demo);
 $('pdf-upload').addEventListener('change',async(e)=>{const f=e.target.files[0];if(f)await openBytes(new Uint8Array(await f.arrayBuffer()),f.name);e.target.value='';});
 $('page-select').addEventListener('change',e=>displayPage(Number(e.target.value)));
 $('region-select').addEventListener('change',updateAlignment);
 $('search').addEventListener('input',()=>{renderLists();scheduleDraw();});
+function setTheme(theme){document.documentElement.dataset.theme=theme;const dark=theme==='dark';$('theme-toggle').textContent=dark?'☀':'☾';$('theme-toggle').setAttribute('aria-pressed',String(dark));$('theme-toggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('theme-toggle').title=dark?'Switch to light mode':'Switch to dark mode';document.querySelector('meta[name="theme-color"]').content=dark?'#101914':'#f7f8f3';}
+setTheme(document.documentElement.dataset.theme||'light');
+$('theme-toggle').addEventListener('click',()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';setTheme(theme);try{saveTheme(theme);}catch{toast('Theme changed for this visit. Browser storage is unavailable.');}});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',e=>{if(!readTheme())setTheme(e.matches?'dark':'light');});
+function setLabelAngle(value,persist=false){state.labelAngle=Number(value);$('label-angle').value=state.labelAngle;$('label-angle-value').textContent=state.labelAngle+'°';$('label-angle').setAttribute('aria-valuetext',state.labelAngle+' degrees');if(persist)try{saveLabelAngle(state.labelAngle);}catch{toast('Label angle changed for this visit. Browser storage is unavailable.');}scheduleDraw();}
+setLabelAngle(state.labelAngle);
+$('label-angle').addEventListener('input',e=>setLabelAngle(e.target.value));$('label-angle').addEventListener('change',e=>setLabelAngle(e.target.value,true));$('reset-label-angle').addEventListener('click',()=>setLabelAngle(0,true));
 $('opacity').addEventListener('input',e=>{state.opacity=Number(e.target.value)/100;$('opacity-label').textContent=e.target.value+'%';scheduleDraw();});
 $('zoom-in').addEventListener('click',()=>zoom(1.25));$('zoom-out').addEventListener('click',()=>zoom(.8));$('fit').addEventListener('click',fit);$('close-detail').addEventListener('click',closeDetail);
 $('sidebar-toggle').addEventListener('click',()=>{const open=document.body.classList.toggle('sidebar-open');$('sidebar-toggle').setAttribute('aria-expanded',String(open));});
@@ -232,28 +244,50 @@ $('export-calibration').addEventListener('click',()=>{const blob=new Blob([JSON.
 $('alignment-upload').addEventListener('change',async(e)=>{const file=e.target.files[0];if(!file)return;try{if(file.size>100000)throw new Error('Alignment file is too large.');const data=JSON.parse(await file.text());if(data.schemaVersion!==1||data.fingerprint!==state.pdf.fingerprints[0]||data.page!==state.page||data.coordinateSystem!=='EPSG:4326')throw new Error('This alignment belongs to a different PDF or page.');makeModel(data.anchors,state.pageBox,false);state.anchors=data.anchors;save(calibrationKey(),state.anchors);updateAlignment();}catch(error){toast(error.message);}e.target.value='';});
 for(const b of document.querySelectorAll('[data-close]'))b.addEventListener('click',()=>$(b.dataset.close).close());
 function keyState(message){const key=readAPIKey();$('key-badge').textContent=key?'Saved on this browser':'Not saved';$('key-remove').hidden=!key;$('key-state').textContent=message||(key?'Your key is saved on this browser. It will still be here after reloading.':'Save a key to remember it on this browser.');}
-function connectionDialog(showKey=false){$('connect-error').textContent='';$('api-key').value=readAPIKey();$('api-key').type='password';$('key-show').textContent='Show key';$('viewer-name').value=saved('tw.portal.name')||'';$('service-setup').open=showKey||!$('api-key').value;keyState();$('connect-dialog').showModal();}
+function connectionDialog(showKey=false){$('connect-error').textContent='';$('upgrade-submit').hidden=true;$('connect-form').dataset.upgrade='false';$('api-key').value=readAPIKey();$('api-key').type='password';$('key-show').textContent='Show key';$('viewer-name').value=saved('tw.portal.name')||'';$('service-setup').open=showKey||!$('api-key').value;keyState();$('connect-dialog').showModal();}
 $('connect').addEventListener('click',()=>connectionDialog());$('key-settings').addEventListener('click',()=>connectionDialog(true));
 $('key-save').addEventListener('click',()=>{try{saveAPIKey($('api-key').value);keyState('Key saved on this browser. Reloading will keep it.');}catch(e){$('key-state').textContent=e.message;}});
 $('key-show').addEventListener('click',()=>{const show=$('api-key').type==='password';$('api-key').type=show?'text':'password';$('key-show').textContent=show?'Hide key':'Show key';});
 $('key-remove').addEventListener('click',()=>{try{removeAPIKey();$('api-key').value='';keyState('Saved key removed from this browser.');}catch(e){$('key-state').textContent=e.message;}});
-$('connect-form').addEventListener('submit',async(e)=>{e.preventDefault();$('join-submit').disabled=true;$('connect-error').textContent='';try{const apiKey=$('api-key').value.trim();if(!apiKey)throw new Error('The portal owner needs to add the Firebase Web API key under Connection setup.');saveAPIKey(apiKey);keyState();client=new ViewerClient({...config,apiKey});const group=await client.join($('invite').value,$('viewer-name').value);save('tw.portal.name',$('viewer-name').value.trim());save('tw.portal.group.v1',group);$('invite').value='';$('connect-dialog').close();await openGroup(group);}catch(error){$('connect-error').textContent=error.message;}finally{$('join-submit').disabled=false;}});
+$('connect-form').addEventListener('submit',async(e)=>{e.preventDefault();$('join-submit').disabled=true;$('connect-error').textContent='';try{const apiKey=$('api-key').value.trim();if(!apiKey)throw new Error('The portal owner needs to add the Firebase Web API key under Connection setup.');saveAPIKey(apiKey);keyState();client=new ViewerClient({...config,apiKey});const group=await client.join($('invite').value,$('viewer-name').value,{upgrade:$('connect-form').dataset.upgrade==='true'});save('tw.portal.name',$('viewer-name').value.trim());save('tw.portal.group.v1',group);$('invite').value='';$('connect-dialog').close();await openGroup(group);}catch(error){$('connect-error').textContent=error.message;$('upgrade-submit').hidden=error.code!=='upgrade';}finally{$('join-submit').disabled=false;}});
+$('upgrade-submit').addEventListener('click',()=>{$('connect-form').dataset.upgrade='true';$('upgrade-submit').hidden=true;$('connect-form').requestSubmit();});
 $('disconnect').addEventListener('click',()=>{stopSession();state.mode='empty';remove('tw.portal.group.v1');$('group-name').textContent='Your field, in view.';$('group-description').textContent='Open a PDF map and connect a TerraWarden group to bring your shared layers into focus.';$('connect-label').textContent='Connect group';$('disconnect').hidden=true;status('No group connected');reconcile();});
 const pointers=new Map();let gesture=null,clicked=null;
 const point=(e)=>{const r=$('map-area').getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top];};
 function updateCursor(p){if(state.model&&state.viewport){const raw=state.viewport.convertToPdfPoint((p[0]-state.x)/state.scale,(p[1]-state.y)/state.scale),geo=state.model.toGeo(...raw);if(raw[0]>=state.pageBox[0]&&raw[0]<=state.pageBox[2]&&raw[1]>=state.pageBox[1]&&raw[1]<=state.pageBox[3]&&inPolygon(raw,state.model.footprint)&&Math.abs(geo.latitude)<=90){state.readout={point:geo,source:'Map cursor'};const grid=formattedGrid(geo,state.crs);$('coordinate-status').textContent=grid?`Cursor · E ${grid.eastingText} · N ${grid.northingText}`:'Cursor outside supported grid';refreshCoordinates();}}}
 function beginGesture(){const values=[...pointers.values()];gesture=values.length>=2?{kind:'pinch',distance:Math.hypot(values[0][0]-values[1][0],values[0][1]-values[1][1]),center:[(values[0][0]+values[1][0])/2,(values[0][1]+values[1][1])/2],x:state.x,y:state.y,scale:state.scale}:{kind:'pan',point:values[0],x:state.x,y:state.y};}
-$('map-area').addEventListener('pointerdown',e=>{if(!state.viewport||e.button!==0||e.target.closest('button,.map-tools,.feature-detail,.map-topbar,.pin-marker,.route-line,.capture-hint'))return;pointers.set(e.pointerId,point(e));$('map-area').setPointerCapture(e.pointerId);clicked={point:point(e),moved:false};beginGesture();});
+$('map-area').addEventListener('pointerdown',e=>{if(!state.viewport||e.button!==0||e.target.closest('button,.map-tools,.feature-detail,.map-topbar,.capture-hint,.draw-controls'))return;if(!editorUI.active()&&!state.capture&&e.target.closest('.pin-marker,.route-line'))return;pointers.set(e.pointerId,point(e));$('map-area').setPointerCapture(e.pointerId);clicked={point:point(e),moved:false};beginGesture();});
 $('map-area').addEventListener('pointermove',e=>{const p=point(e);updateCursor(p);if(!pointers.has(e.pointerId)||!gesture)return;pointers.set(e.pointerId,p);if(clicked&&Math.hypot(p[0]-clicked.point[0],p[1]-clicked.point[1])>4)clicked.moved=true;if(gesture.kind==='pinch'&&pointers.size>=2){const[a,b]=[...pointers.values()],center=[(a[0]+b[0])/2,(a[1]+b[1])/2],distance=Math.hypot(a[0]-b[0],a[1]-b[1]);state.scale=Math.max(.03,Math.min(12,gesture.scale*distance/Math.max(1,gesture.distance)));state.x=center[0]-(gesture.center[0]-gesture.x)*state.scale/gesture.scale;state.y=center[1]-(gesture.center[1]-gesture.y)*state.scale/gesture.scale;if(clicked)clicked.moved=true;}else{state.x=gesture.x+p[0]-gesture.point[0];state.y=gesture.y+p[1]-gesture.point[1];}transform();});
-function endPointer(e){if(!pointers.has(e.pointerId))return;const p=point(e),pick=state.capture&&clicked&&!clicked.moved&&pointers.size===1&&e.type!=='pointercancel';pointers.delete(e.pointerId);if(pointers.size)beginGesture();else gesture=null;if(!pick&&clicked&&!clicked.moved&&e.type!=='pointercancel')updateCursor(p);if(pick){const[x,y]=state.viewport.convertToPdfPoint((p[0]-state.x)/state.scale,(p[1]-state.y)/state.scale);if(x>=state.pageBox[0]&&x<=state.pageBox[2]&&y>=state.pageBox[1]&&y<=state.pageBox[3]){state.pendingAnchor={x,y};cancelCapture();$('anchor-form').reset();$('anchor-number').textContent=state.anchors.length+1;$('anchor-error').textContent='';$('anchor-dialog').showModal();}}clicked=null;}
+function endPointer(e){
+  if(!pointers.has(e.pointerId))return;const p=point(e),tap=clicked&&!clicked.moved&&pointers.size===1&&e.type!=='pointercancel';
+  pointers.delete(e.pointerId);if(pointers.size)beginGesture();else gesture=null;
+  if(tap){const[x,y]=state.viewport.convertToPdfPoint((p[0]-state.x)/state.scale,(p[1]-state.y)/state.scale);if(x>=state.pageBox[0]&&x<=state.pageBox[2]&&y>=state.pageBox[1]&&y<=state.pageBox[3]){
+    if(state.capture){state.pendingAnchor={x,y};cancelCapture();$('anchor-form').reset();$('anchor-number').textContent=state.anchors.length+1;$('anchor-error').textContent='';$('anchor-dialog').showModal();}
+    else if(editorUI.active()&&state.model&&inPolygon([x,y],state.model.footprint))editorUI.mapClick(state.model.toGeo(x,y));
+    else updateCursor(p);
+  }}clicked=null;
+}
 $('map-area').addEventListener('pointerup',endPointer);$('map-area').addEventListener('pointercancel',endPointer);
 $('map-area').addEventListener('wheel',e=>{if(!state.viewport)return;e.preventDefault();zoom(Math.exp(-e.deltaY*.0015),point(e));},{passive:false});
-$('map-area').addEventListener('keydown',e=>{if(e.target.closest('input,select,button,[role=button]'))return;if(e.key==='+'||e.key==='='){e.preventDefault();zoom(1.25);}else if(e.key==='-'){e.preventDefault();zoom(.8);}else if(e.key==='0'){e.preventDefault();fit();}else if(e.key==='Escape'){cancelCapture();closeDetail();}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();state.x+=e.key==='ArrowLeft'?40:e.key==='ArrowRight'?-40:0;state.y+=e.key==='ArrowUp'?40:e.key==='ArrowDown'?-40:0;transform();}});
+$('map-area').addEventListener('keydown',e=>{if(e.target.closest('input,select,button,[role=button]'))return;if(e.key==='+'||e.key==='='){e.preventDefault();zoom(1.25);}else if(e.key==='-'){e.preventDefault();zoom(.8);}else if(e.key==='0'){e.preventDefault();fit();}else if(e.key==='Escape'){cancelCapture();editorUI.cancelMap(true);closeDetail();}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();state.x+=e.key==='ArrowLeft'?40:e.key==='ArrowRight'?-40:0;state.y+=e.key==='ArrowUp'?40:e.key==='ArrowDown'?-40:0;transform();}});
 document.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault();});
 $('map-area').addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();dragDepth++;$('drop-hint').hidden=false;}});
 $('map-area').addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('drop-hint').hidden=true;}});
 $('map-area').addEventListener('drop',async e=>{e.preventDefault();dragDepth=0;$('drop-hint').hidden=true;const file=e.dataTransfer.files[0];if(file&&(/\.pdf$/i.test(file.name)||file.type==='application/pdf'))await openBytes(new Uint8Array(await file.arrayBuffer()),file.name);else toast('Drop a PDF map here.');});
 new ResizeObserver(()=>{if(state.viewport)fit();}).observe($('map-area'));
-renderLists();
+function rebuildDemo(){
+  if(state.mode!=='demo'||!demoClient)return;state.group=demoClient.group;state.manifests=demoClient.manifests;state.routes.clear();
+  for(const [id,m]of Object.entries(state.manifests))if(m.isDeleted===false)try{state.routes.set(id,decodeRoute(demoClient.tree.routeGeometry.DEMO[id]?.[m.revision],m,id));}catch{}
+  reconcile();
+}
+function applySaved(result){
+  if(state.mode==='demo'){rebuildDemo();return;}
+  if(result.record&&state.group){const r=result.record,key=r.kind==='layer'?`layer-${r.layerID}`:`pin-${r.layerID}-${r.pin.id}`;state.group.items??={};state.group.items[key]=r;}
+  if(result.manifest){const m=result.manifest;state.manifests[result.id]=m;if(m.isDeleted)state.routes.delete(result.id);else if(result.chunks)state.routes.set(result.id,decodeRoute(result.chunks,m,result.id));else if(state.routes.has(result.id))state.routes.set(result.id,{...state.routes.get(result.id),...m.metadata});}
+  if(result.replacedID){if(state.manifests[result.replacedID])state.manifests[result.replacedID].isDeleted=true;state.routes.delete(result.replacedID);}
+  reconcile();
+}
+const editorUI=createEditorUI({getState:()=>state,client:()=>state.mode==='demo'?demoClient:client,features:allFeatures,displayName:()=>state.mode==='demo'?'Demo editor':saved('tw.portal.name')||'Web portal',toast,draw:scheduleDraw,cancelCalibration:cancelCapture,closeDetail,saved:applySaved});
+renderLists();editorUI.refresh();
 const previousGroup=saved('tw.portal.group.v1'),apiKey=readAPIKey();
 if(previousGroup&&apiKey){try{client=new ViewerClient({...config,apiKey});if(client.identity?.refreshToken)openGroup(previousGroup).catch(e=>connectionLost(e.message));}catch(e){status(e.message,'error');}}

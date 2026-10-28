@@ -47,12 +47,12 @@ test('viewer invitation joins only the browser membership and never writes share
     if(url.includes('/members/')){if(options.method==='PUT'){writes.push({url,options});return Response.json(JSON.parse(options.body));}return Response.json(null);}
     return Response.json(group);
   };
-  try{const client=new ViewerClient({apiKey:'test-key',databaseURL:'https://test.firebaseio.com'});assert.deepEqual(await client.join('ABCDEFGHJKLM','Browser'),{id:'G',name:'Test'});assert.equal(writes.length,1);assert.match(writes[0].url,/pinGroups\/G\/members\/BROWSER\.json/);assert.equal(JSON.parse(writes[0].options.body).role,'viewer');assert.equal(writes[0].options.headers['if-match'],'null_etag');}finally{globalThis.fetch=original;}
+  try{const client=new ViewerClient({apiKey:'test-key',databaseURL:'https://test.firebaseio.com'});assert.deepEqual(await client.join('ABCDEFGHJKLM','Browser'),{id:'G',name:'Test',role:'viewer'});assert.equal(writes.length,1);assert.match(writes[0].url,/pinGroups\/G\/members\/BROWSER\.json/);assert.equal(JSON.parse(writes[0].options.body).role,'viewer');assert.equal(writes[0].options.headers['if-match'],'null_etag');}finally{globalThis.fetch=original;}
 });
-test('editor invitations are rejected before a membership write',async()=>{
-  globalThis.localStorage={getItem:()=>null,setItem:()=>{}};const original=globalThis.fetch;let writes=0;
-  globalThis.fetch=async(url,options={})=>{if(url.includes('accounts:signUp'))return Response.json({localId:'B',refreshToken:'r',idToken:'t',expiresIn:'3600'});if(options.method==='PUT')writes++;return Response.json({enabled:true,groupID:'G',ownerID:'O',role:'editor'});};
-  try{const client=new ViewerClient({apiKey:'test',databaseURL:'https://test.firebaseio.com'});await assert.rejects(client.join('ABCDEFGHJKLM','Browser'),/allows editing/);assert.equal(writes,0);}finally{globalThis.fetch=original;}
+test('editor invitations join with the server assigned edit role',async()=>{
+ globalThis.localStorage={getItem:()=>null,setItem:()=>{}};const original=globalThis.fetch;const writes=[];
+ globalThis.fetch=async(url,options={})=>{if(url.includes('accounts:signUp'))return Response.json({localId:'B',refreshToken:'r',idToken:'t',expiresIn:'3600'});if(url.includes('pinGroupInvites'))return Response.json({enabled:true,groupID:'G',ownerID:'O',role:'editor'});if(url.includes('/members/')){if(options.method==='PUT'){writes.push(JSON.parse(options.body));return Response.json(null);}return Response.json(null);}return Response.json({isDeleted:false,name:'Editable',ownerID:'O',members:{B:{role:'editor'}}});};
+ try{const client=new ViewerClient({apiKey:'test',databaseURL:'https://test.firebaseio.com'});const group=await client.join('ABCDEFGHJKLM','Browser');assert.equal(group.role,'editor');assert.equal(writes[0].role,'editor');}finally{globalThis.fetch=original;}
 });
 test('live sync applies changes and stops after authoritative access cancellation',async()=>{
   globalThis.localStorage={getItem:()=>null,setItem:()=>{}};const original=globalThis.fetch;

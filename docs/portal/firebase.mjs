@@ -45,36 +45,42 @@ export class ViewerClient {
     if(!path || path.split('/').some(p=>!p || /[.#$\[\]]/.test(p))) throw new Error('Invalid sync path.');
     return `${this.config.databaseURL}/sharingV2/${path.split('/').map(encodeURIComponent).join('/')}.json?auth=${encodeURIComponent(token)}`;
   }
-  async request(path,{method='GET',body,signal,etag}={}) {
+  async request(path,{method='GET',body,signal,etag,withETag=false}={}) {
     for(let attempt=0;attempt<2;attempt++) {
       const token=await this.token(attempt>0);
       const headers={'Content-Type':'application/json'};
       if(etag)headers['if-match']=etag;
+      if(withETag)headers['X-Firebase-ETag']='true';
       const timeout=AbortSignal.timeout(30000);
       const response=await fetch(this.url(path,token),{method,headers,body:body===undefined?undefined:JSON.stringify(body),signal:signal?AbortSignal.any([signal,timeout]):timeout,cache:'no-store',referrerPolicy:'no-referrer'});
       const result=await response.json();
       if(response.status===401 && attempt===0 && /expired/i.test(result?.error||''))continue;
-      if([401,403].includes(response.status))throw fail('Group access was denied. Ask the owner for a current Read-only invitation.','permission');
+      if([401,403].includes(response.status))throw fail('Group access was denied. Ask the owner for a current invitation.','permission');
       if(response.status===412)throw fail('The membership changed while joining. Try the invitation again.','conflict');
       if(!response.ok)throw fail(`The sharing service could not complete the request (${response.status}).`,'network');
-      return result;
+      return withETag?{value:result,etag:response.headers.get('ETag')}:result;
     }
     throw fail('Sign-in has expired. Reconnect the group.','auth');
   }
-  async join(input,name) {
+  async join(input,name,{upgrade=false}={}) {
     const code=inviteCode(input),displayName=name.trim();
     if(!displayName || displayName.length>120)throw new Error('Enter a viewer name of up to 120 characters.');
     await this.token();
     const invite=await this.request(`pinGroupInvites/${code}`);
     if(!invite?.enabled || !invite.groupID || !invite.ownerID)throw new Error('This invitation is unavailable. Ask the owner for a current code.');
-    if(invite.role!=='viewer')throw new Error('This code allows editing. Ask the owner to set the invitation to Read-only in TerraWarden and share the new code.');
+    if(!['viewer','editor'].includes(invite.role))throw new Error('This invitation has an unsupported role.');
     const path=`pinGroups/${invite.groupID}/members/${this.uid}`;
-    const own=await this.request(path);
-    if(own && own.role!=='viewer')throw new Error('This browser already has a different group role. Ask the owner to change it to Read-only.');
-    if(!own)await this.request(path,{method:'PUT',etag:'null_etag',body:{uid:this.uid,displayName,role:'viewer',inviteCode:code,joinedAt:{'.sv':'timestamp'}}});
+    let own=await this.request(path);
+    if(own?.role==='viewer'&&invite.role==='editor'){
+      if(!upgrade)throw fail('This browser is already a viewer. Rejoin using this edit code to enable editing.','upgrade');
+      const current=await this.request(`pinGroups/${invite.groupID}`);
+      if(current?.isDeleted!==false||current.ownerID!==invite.ownerID||current.inviteCode!==code||current.inviteRole!=='editor')throw fail('The edit invitation changed. Ask the owner for a current code.','permission');
+      await this.request(path,{method:'DELETE'});own=null;
+    }
+    if(!own)await this.request(path,{method:'PUT',etag:'null_etag',body:{uid:this.uid,displayName,role:invite.role,inviteCode:code,joinedAt:{'.sv':'timestamp'}}});
     const group=await this.request(`pinGroups/${invite.groupID}`);
-    if(group?.isDeleted!==false || group.ownerID!==invite.ownerID || group.members?.[this.uid]?.role!=='viewer')throw fail('The group invitation or membership is no longer available.','permission');
-    return {id:invite.groupID,name:group.name};
+    if(group?.isDeleted!==false || group.ownerID!==invite.ownerID || !['viewer','editor','owner'].includes(group.members?.[this.uid]?.role))throw fail('The group invitation or membership is no longer available.','permission');
+    return {id:invite.groupID,name:group.name,role:group.members[this.uid].role};
   }
   async watch(path,onData,onStatus,signal) {
     let retry=0,force=false;

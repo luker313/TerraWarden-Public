@@ -23,3 +23,10 @@ Live Firebase synchronization has not been exercised against a real group. End-t
 - The supplied ArcMap PDF was tested locally. Its GDA94 / MGA Zone 50 metadata is recognised without manual points; all four control points round-trip within 0.0001 PDF points. Browser upload detects “GDA94 GeoPDF aligned” and displays the EPSG:28350 easting/northing readout.
 - The uploaded PDF and its actual control-point coordinates are excluded from the repository. Published regression PDF fixtures are synthetic and generated in memory.
 - Live device GPS is implemented and tested with a mock location provider. Physical-device GPS accuracy and the browser permission flow have not been exercised here. Existing live Firebase verification limitations still apply.
+
+
+## Theme, labels, layout and editor update
+
+- 28 automated tests pass, including editor creation/movement, stale-edit rejection, viewer rejection, immutable line metadata, label pivot/zoom invariants and preference persistence.
+- Isolated Firebase Database/Auth emulators with the current private repository rules accepted layer/pin/line creation, pin movement, line edits/redrawing, deletion tombstones and contribution records, and rejected viewer writes and writes after a role downgrade. Production database rules were not changed.
+- Browser checks created a demo pin and line, verified a saved 45-degree label angle after reload, inspected dark mode, and measured the footer below the feature list on desktop and at a 393-pixel mobile viewport. Physical Safari/device checks remain outside this environment.
