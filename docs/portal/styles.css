@@ -51,3 +51,6 @@ body{height:100vh;height:100dvh;display:flex;flex-direction:column}
 .export-toast-link{text-decoration:underline;font-weight:600;white-space:nowrap}
 #export-pdf-tool svg{display:block;margin:auto;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 button:disabled{cursor:default}
+/* Keep navigation/export tools reachable beside the feature inspector. */
+.feature-detail{right:76px;max-width:calc(100% - 96px)}
+@media(max-width:650px){.feature-detail{right:65px;max-width:calc(100% - 85px)}}
