@@ -1,4 +1,4 @@
-# TerraWarden layer portal
+# TerraWarden Web Portal
 
 A static, browser-based portal for TerraWarden's existing Firebase `sharingV2` layers over a locally opened PDF. Designed for the `luker313/TerraWarden-Public` GitHub Pages site.
 
@@ -22,7 +22,8 @@ The key supplied in chat comes from the private iOS application's configuration.
 - Local PDF upload/drop, multi-page navigation, pan, wheel/pinch zoom and fit.
 - Automatic recognition of supported GeoPDF coordinate systems from EPSG metadata or ArcMap WKT, including reversed viewport bounds.
 - Easting and northing as the main readout, labelled with the map grid, datum and EPSG code; WGS84 latitude/longitude stays secondary. Pin details use the same grid.
-- Optional **Locate me** for live browser GPS, with a location dot, accuracy area, easting/northing and accuracy/age status. Location starts only when requested and is not sent to Firebase.
+- Optional **Follow my GPS location**, with a location dot, accuracy area, easting/northing and accuracy/age status. The camera follows each fresh fix; manual panning unlocks it. Location starts only when requested and is not sent to Firebase.
+- Export the complete current page as a GeoPDF with the visible layers/search results, opacity and pin label angle. Original images are not downsampled; overlays use PDF vectors and embedded text, with an up-to-600 dpi browser fallback for unsupported label glyphs.
 - Live Firebase REST streams for group pins/layers and route manifests, automatic token refresh/reconnection, and immutable route-chunk downloads.
 - Shared pin details, route and drawn-line geometry, layer visibility, opacity, and feature search.
 - Tombstones and privacy-removal filters, route-revision checks, and clearing shared features when group access ends.
@@ -44,7 +45,7 @@ GDA94 ↔ GDA2020 uses the official EPSG:8048 conformal seven-parameter transfor
 
 ## Easting, northing and GPS
 
-The coordinate card shows the current map cursor or selected pin. Choose **Locate me** (the crosshair in the map controls) to show live device GPS instead; approve the browser's location prompt if desired. Choose **Stop GPS location** to stop. GPS does not automatically restart after reloading.
+The coordinate card shows the current map cursor or selected pin. Choose **Follow my GPS location** (the crosshair in the map controls) to show live device GPS and centre the camera on each fresh fix. Zooming keeps the puck centred. Panning, fitting the whole page or centring a selected feature unlocks the view while GPS continues updating; choose **Resume GPS following** to lock it again. Choose **Stop GPS following** while locked to turn GPS off. GPS does not automatically restart after reloading. Following outside the current map's coverage leaves the last useful view in place and resumes when the position returns to the map.
 
 A recognised projected map keeps its fixed grid and zone, even near a zone boundary. For a geographic-only map, a compatible grid is derived from its centre; without a recognised map grid, WGS84 UTM is chosen for the position. The readout always labels the datum, zone/projection and EPSG code. Readouts outside the supported projection domain show no grid value. A map cursor is labelled as a cursor, not GPS. Approximate datum relationships are described under Map alignment and in the grid label tooltip.
 
@@ -79,17 +80,46 @@ See `PORTAL-VALIDATION.md` for completed checks and the remaining live-service c
 ## Included third-party libraries
 
 - PDF.js / `pdfjs-dist` **5.6.205**, Apache-2.0: PDF rendering, worker, character maps, standard fonts and WASM codecs. License: `docs/portal/vendor/PDFJS-LICENSE`; individual font/codec licenses are retained in their folders.
-- `pdf-lib` **1.17.1**, MIT: GeoPDF object/metadata inspection. License: `docs/portal/vendor/PDF-LIB-LICENSE.md`.
+- `pdf-lib` **1.17.1**, MIT: GeoPDF inspection, original-page copying and vector exports. License: `docs/portal/vendor/PDF-LIB-LICENSE.md`.
+- `@pdf-lib/fontkit` **1.1.1**, MIT: embedded/subsetted export fonts. The published UMD distribution is wrapped as a local ES module; notices: `docs/portal/vendor/FONTKIT-LICENSE.txt`. Export reuses the vendored Liberation Sans font and its existing licence.
 
 References: [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages), [Firebase REST database and streams](https://firebase.google.com/docs/reference/rest/database), [Firebase REST authentication](https://firebase.google.com/docs/reference/rest/auth), [PDF.js](https://mozilla.github.io/pdf.js/).
 
 
 ## Theme, labels and editing
 
-Use the sun/moon button in the header to switch light/dark mode. The initial theme follows the system; a chosen theme is remembered. PDF artwork retains its original colours. Under Layers, **Pin text angle** rotates all pin labels around their own pin positions from -180° to +180°. The angle is saved in this browser; **Reset text angle** restores 0°.
+Use the sun/moon button in the header to switch light/dark mode. The initial theme follows the system; a chosen theme is remembered. A faint vector topographic texture decorates the header, sidebar and cards. PDF artwork retains its original colours. Under Layers, **Pin text angle** rotates all pin labels around their own pin positions from -180° to +180°. The angle is saved in this browser; **Reset text angle** restores 0°.
 
 Editors can use **New layer**, **Add pin** and **Draw line**. Click the aligned map to position a pin or add line vertices, then finish and save. Pins can also be positioned with the displayed grid's easting/northing or WGS84 latitude/longitude. Select a feature for Edit/Delete; drawn lines also offer Redraw line. Existing recorded routes support metadata edits but are not converted to drawn lines. Layer names are edited with the pencil beside the layer.
 
 Writes register contribution and upload ownership records for the existing privacy/deletion service. Version checks reject stale changes rather than overwriting a newer device edit. Deletions are native-compatible tombstones. Published geometry is immutable; redrawing creates a replacement line and removes the original. Failed replacement cleanup is reported explicitly. The demo supports these controls in memory only, without contacting Firebase. The API key remains user-entered and excluded from source.
 
 The sidebar scrolls as one column; sections cannot shrink below their contents, so the footer follows the final feature on desktop and mobile.
+
+## GeoPDF export
+
+Choose **Export map as GeoPDF** under Base map, or use the download icon in the
+map tools. Export requires a readable PDF and a valid automatic or manual
+alignment. It downloads one complete current PDF page, rather than a screenshot
+of the zoomed viewport. Checked layers and the current feature-search filter
+control the included overlay. The overlay's opacity, label rotation and current
+screen-to-map sizing are retained. Labels hidden at very low zoom remain hidden.
+
+The exporter copies the original page, image streams, fonts, page rotation,
+CropBox and relevant PDF visibility settings. Original map images are never
+resampled or recompressed to a screenshot DPI. Shared lines and pins are added
+as vectors. Label text uses an embedded Liberation Sans subset; glyphs outside
+that font's repertoire use the browser's font fallback rendered at up to 600 dpi within mobile canvas limits.
+This preserves the source's available detail without inventing new image detail.
+
+For an automatic alignment, the selected original `/VP` geospatial viewport and
+its datum metadata are retained. For reference-point alignment, the exporter
+writes a WGS84 `/Measure` `/GEO` viewport and verifies the geographic transform
+after reopening the saved PDF. Lines are clipped to the mapped page footprint.
+The UI texture, controls, temporary GPS puck, invitation codes, API key and
+unselected shared layers are not added to the file. Original artwork already
+printed inside the base PDF remains part of that PDF.
+
+Exports are snapshots of the currently loaded rendered data. Allow routes to
+finish synchronising before exporting if all selected route geometry is needed.
+All export processing and the resulting download stay in the browser.

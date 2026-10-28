@@ -41,3 +41,13 @@ body{height:100vh;height:100dvh;display:flex;flex-direction:column}
 @media(max-width:650px){.header-actions>#key-settings{padding:0;white-space:nowrap;flex-shrink:0}}
 /* Focus must not scroll the transformed map underneath its fixed controls. */
 .map-area{overflow:clip}
+
+/* A faint vector contour texture on the chrome; PDF artwork is untouched. */
+.app-header,#sidebar,.feature-detail,.coordinate-card,.sidebar-footer,dialog{background-image:url('./assets/topography.svg');background-size:560px 560px}
+#sidebar{background-attachment:local}
+.export-map{margin-top:17px;font-size:11px}
+.export-hint{font-size:9px;margin:9px 0 0}
+.export-download{display:flex;align-items:center;justify-content:center;margin-top:9px;font-size:11px}
+.export-toast-link{text-decoration:underline;font-weight:600;white-space:nowrap}
+#export-pdf-tool svg{display:block;margin:auto;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+button:disabled{cursor:default}

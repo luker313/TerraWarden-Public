@@ -15,7 +15,7 @@ export function geoPDFRegions(document,index){
   const page=document.getPages()[index],vp=lookup(page?.node,'VP');
   const entries=vp instanceof PDFArray?Array.from({length:vp.size()},(_,i)=>vp.lookup(i)):vp instanceof PDFDict?[vp]:[];
   const regions=[];let unsupported='';
-  for(const entry of entries){
+  for(const [viewportIndex,entry] of entries.entries()){
     try{
       const measure=lookup(entry,'Measure'),gcs=lookup(measure,'GCS');
       if(!(measure instanceof PDFDict)||lookup(measure,'Subtype')?.asString?.()!=='/GEO')continue;
@@ -43,7 +43,7 @@ export function geoPDFRegions(document,index){
         toGeo:(x,y)=>toWGS84(native.toGeo(x,y),source.datum),
         toPDF:(latitude,longitude)=>{const point=fromWGS84({latitude,longitude},source.datum);return native.toPDF(point.latitude,point.longitude);}
       };
-      regions.push({name:string(lookup(entry,'Name'))||`GeoPDF region ${regions.length+1}`,model,crs,source:`${source.datumLabel} GeoPDF`,note:source.note});
+      regions.push({name:string(lookup(entry,'Name'))||`GeoPDF region ${regions.length+1}`,model,crs,source:`${source.datumLabel} GeoPDF`,note:source.note,viewportIndex});
     }catch{/* Invalid metadata never prevents opening the PDF itself. */}
   }
   return {regions,message:regions.length?'':unsupported||'No supported GeoPDF alignment on this page. Pick at least three reference points.'};

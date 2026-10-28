@@ -40,3 +40,14 @@ Live Firebase synchronization has not been exercised against a real group. End-t
 - Browser checks verified detailed rendering with the demo at 584% and the supplied ArcMap PDF at 251%, including panning. The latter's GDA94/MGA50 automatic alignment remains intact. Uploaded maps are excluded from the public code.
 - Browser checks use Chrome with mobile CSS viewports; physical iOS Safari and device GPS remain untested.
 - The map viewport clips transformed content without becoming a scroll container, so focusing zoom tools or off-screen features cannot scroll the floating controls or pin panel out of position.
+
+## Web Portal texture, GeoPDF export and GPS following
+
+- The portal and public navigation use **Web Portal**; the repository and `/portal/` URL are unchanged. The README now covers the portal, support/privacy pages, permissions, local storage, deployment and dependencies.
+- A local 20 KB vector contour texture is applied to the header, sidebar, cards and dialogs in light/dark mode. PDF artwork is not textured. Browser layouts at 320, 393 and 430 CSS pixels retain header spacing and the footer below all features.
+- 39 Node tests pass, including selected-layer/search export filtering, original image and vector-content byte preservation, original PDF layer visibility, a single selected page, selected geospatial viewport, manual WGS84 alignment, CropBox/rotation/UserUnit, rotated label anchoring, route clipping and cancellation.
+- A demo export was rendered independently with Poppler and inspected. It contains the six selected drill-collar pins and two routes/lines, with the observation layer excluded, rotated labels and 65% overlay opacity.
+- An export of the supplied ArcMap map retained its original `/LPTS`, `/GPTS`, `/Bounds` and `/BBox` exactly. Independent pypdf checks confirmed the original 30 image payloads and a Māori/Greek pin label were retained. This uploaded map and its export are excluded from the public repository.
+- Browser checks generated the GeoPDF and exposed the download link. The cloud browser's URL policy blocks opening or collecting `blob:` downloads; exported files were instead validated through the same exporter locally. Physical Safari/Avenza import and device GPS are not claimed as tested.
+- A local simulated browser GPS provider exercised successive moving fixes, zoom while locked, pointer-drag unlock, fixes while unlocked, resume, off-page handling and stop. On-page fixes stayed within 0.001 CSS pixels of the camera centre; off-page fixes preserved the last useful view. The simulation harness is not published.
+- The real Firebase API key remains excluded from public files; backend rules and permissions are unchanged.

@@ -1,5 +1,5 @@
 {
-  "name": "terrawarden-layer-portal",
+  "name": "terrawarden-web-portal",
   "private": true,
   "type": "module",
   "scripts": {

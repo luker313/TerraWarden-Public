@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { readAPIKey, saveAPIKey, removeAPIKey, readTheme, saveTheme, readLabelAngle, saveLabelAngle } from './settings.mjs';
 import { makeModel, decodeGroup, decodeRoute, inPolygon, swiftDate } from './core.mjs';
-import { openPDF, geoPDFRegions } from './pdf-map.mjs';
+import { openPDF, geoPDFRegions } from './pdf-map.mjs?v=20261028.3';
 import { ViewerClient } from './firebase.mjs';
 import { formattedGrid, datumNote } from './coordinates.mjs';
 import { LocationTracker, accuracyRing } from './location.mjs';
@@ -9,9 +9,11 @@ import { pinLabelPlacement } from './label-placement.mjs';
 import { createEditorUI } from './edit-ui.mjs';
 import { DemoClient } from './demo-client.mjs';
 import { PDFViewportRenderer } from './pdf-render.mjs';
+import { filterFeatures } from './feature-visibility.mjs';
+import { gpsCameraTarget } from './gps-follow.mjs';
 const $=(id)=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
-const state={layers:[],hidden:new Set(),routes:new Map(),manifests:{},group:null,mode:'empty',pdf:null,metadata:null,page:1,viewport:null,model:null,regions:[],anchors:[],capture:false,scale:1,x:0,y:0,selected:null,session:null,generation:0,pdfGeneration:0,pageGeneration:0,routePending:new Set(),routeErrors:new Set(),role:null,opacity:1,labelAngle:readLabelAngle(),crs:null,readout:null,gpsFix:null,gpsStatus:'off'};
-let toastTimer,dragDepth=0,drawRequest=0,client=null,demoClient=null;
+const state={layers:[],hidden:new Set(),routes:new Map(),manifests:{},group:null,mode:'empty',pdf:null,metadata:null,page:1,viewport:null,model:null,regions:[],anchors:[],capture:false,scale:1,x:0,y:0,selected:null,session:null,generation:0,pdfGeneration:0,pageGeneration:0,routePending:new Set(),routeErrors:new Set(),role:null,opacity:1,labelAngle:readLabelAngle(),crs:null,readout:null,gpsFix:null,gpsStatus:'off',gpsFollowing:false,pageLoading:false,exporting:false};
+let toastTimer,dragDepth=0,drawRequest=0,client=null,demoClient=null,exportURL=null;
 const pdfRenderer=new PDFViewportRenderer($('pdf-detail'));
 const saved=(key)=>{try{return JSON.parse(localStorage.getItem(key));}catch{return null;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{toast('Browser storage is unavailable. Changes will last for this visit.');}};
@@ -24,8 +26,7 @@ function notice(message){$('map-notice').textContent=message;$('map-notice').hid
 const calibrationKey=()=>`tw.portal.alignment.v1.${state.pdf?.fingerprints?.[0]}.${state.page}`;
 const drawingColours={green:'#36a447',red:'#d25252',blue:'#3a85c6',yellow:'#d4be42',purple:'#946ca8',orange:'#d68c46',white:'#ffffff',black:'#202b25'};
 function allFeatures(){return state.layers.flatMap(l=>[...l.pins,...l.routes].map(f=>({...f,layerName:l.name,color:drawingColours[f.drawingAppearance?.color]||l.color})));}
-const matches=(f)=>!$('search').value.trim()||[f.name,f.note,f.unitID,f.mineSite,f.layerName].some(s=>String(s||'').toLocaleLowerCase().includes($('search').value.trim().toLocaleLowerCase()));
-function visibleFeatures(){return allFeatures().filter(f=>!state.hidden.has(f.layerID)&&matches(f));}
+function visibleFeatures(){return filterFeatures(allFeatures(),{hidden:state.hidden,search:$('search').value});}
 function reconcile(){
   if(state.group){
     state.layers=decodeGroup(state.group);
@@ -71,10 +72,12 @@ function updateAlignment(){
   if(state.model){const b=state.pageBox;state.readout={point:state.model.toGeo((b[0]+b[2])/2,(b[1]+b[3])/2),source:'Map centre'};}else state.readout=null;
   refreshCoordinates();
   if(state.selected){const selected=allFeatures().find(f=>f.id===state.selected);if(selected)showDetail(selected,false);}
-  scheduleDraw();
+  updateExportButtons();scheduleDraw();
 }
 async function openBytes(bytes,name){
   const generation=++state.pdfGeneration;
+  clearExportDownload();
+  state.pageLoading=true;updateExportButtons();
   $('pdf-description').textContent='Opening PDF…';
   try{
     if(bytes.byteLength>100*1024*1024)throw new Error('Choose a PDF smaller than 100 MB for this browser viewer.');
@@ -88,9 +91,11 @@ async function openBytes(bytes,name){
     $('page-select').replaceChildren(...Array.from({length:state.pdf.numPages},(_,i)=>{const o=node('option','',`Page ${i+1} of ${state.pdf.numPages}`);o.value=i+1;return o;}));
     $('map-controls').hidden=false;cancelCapture();await displayPage(1);
   }catch(e){if(generation===state.pdfGeneration){$('pdf-description').textContent=state.pdf?'Stored only in this browser session':'Choose a PDF or drop it on the map';toast(e.name==='PasswordException'?'This PDF needs a password. Open an unprotected copy to use it here.':`Could not open this PDF. ${e.message}`);}}
+  finally{if(generation===state.pdfGeneration){state.pageLoading=false;updateExportButtons();}}
 }
 async function displayPage(number){
   const generation=++state.pageGeneration;
+  state.pageLoading=true;updateExportButtons();
   closeDetail();cancelCapture();pdfRenderer.clear();
   try{
     if(state.renderTask){state.renderTask.cancel();await state.renderTask.promise.catch(()=>{});}
@@ -106,9 +111,10 @@ async function displayPage(number){
     const stored=saved(calibrationKey());state.anchors=Array.isArray(stored)?stored:[];
     $('stage').hidden=false;$('map-empty').hidden=true;updateAlignment();fit();
   }catch(e){if(e.name!=='RenderingCancelledException')toast(`This page could not be rendered. ${e.message}`);}
+  finally{if(generation===state.pageGeneration){state.pageLoading=false;updateExportButtons();}}
 }
 function fit(){if(!state.viewport)return;const rect=$('map-area').getBoundingClientRect();state.scale=Math.min((rect.width-80)/state.width,(rect.height-145)/state.height);state.scale=Math.max(.03,state.scale);state.x=(rect.width-state.width*state.scale)/2;state.y=70+(rect.height-145-state.height*state.scale)/2;transform();}
-function transform(){if(!state.viewport)return;$('stage').style.transform=`translate(${state.x}px,${state.y}px) scale(${state.scale})`;$('zoom-label').textContent=Math.round(state.scale*100)+'%';const rect=$('map-area').getBoundingClientRect();pdfRenderer.schedule({pageWidth:state.width,pageHeight:state.height,width:rect.width,height:rect.height,x:state.x,y:state.y,scale:state.scale,dpr:window.devicePixelRatio||1});scheduleDraw();}
+function transform(){if(!state.viewport)return;const rect=$('map-area').getBoundingClientRect();if(state.gpsFollowing){const target=gpsCameraTarget({fix:state.gpsFix,model:state.model,viewport:state.viewport,pageBox:state.pageBox,width:rect.width,height:rect.height,scale:state.scale});if(target){state.x=target.x;state.y=target.y;}}$('stage').style.transform=`translate(${state.x}px,${state.y}px) scale(${state.scale})`;$('zoom-label').textContent=Math.round(state.scale*100)+'%';pdfRenderer.schedule({pageWidth:state.width,pageHeight:state.height,width:rect.width,height:rect.height,x:state.x,y:state.y,scale:state.scale,dpr:window.devicePixelRatio||1});scheduleDraw();}
 function zoom(factor,point){if(!state.viewport)return;const rect=$('map-area').getBoundingClientRect(),p=point||[rect.width/2,rect.height/2];const next=Math.max(.03,Math.min(12,state.scale*factor));state.x=p[0]-(p[0]-state.x)*next/state.scale;state.y=p[1]-(p[1]-state.y)*next/state.scale;state.scale=next;transform();}
 function scheduleDraw(){if(!drawRequest)drawRequest=requestAnimationFrame(()=>{drawRequest=0;drawOverlay();});}
 function pdfPosition(feature){const p=state.model?.toPDF(feature.latitude,feature.longitude);return p?{pdf:p,screen:state.viewport.convertToViewportPoint(...p)}:null;}
@@ -151,26 +157,28 @@ function showDetail(f,center){
   if(!$('detail-fields').children.length)$('detail-fields').append(node('dd','', 'No additional details.'));
   $('feature-detail').hidden=false;editorUI.refresh();
   if(f.type==='pin'){state.readout={point:f,source:'Selected pin'};refreshCoordinates();}
-  if(center&&state.model){const point=f.type==='pin'?f:f.segments.flatMap(s=>s.points)[0],pos=point&&pdfPosition(point);if(pos){const rect=$('map-area').getBoundingClientRect();state.scale=Math.max(state.scale,1.1);state.x=rect.width*.4-pos.screen[0]*state.scale;state.y=rect.height*.5-pos.screen[1]*state.scale;transform();}}
+  if(center&&state.model){const point=f.type==='pin'?f:f.segments.flatMap(s=>s.points)[0],pos=point&&pdfPosition(point);if(pos){pauseGPSFollow();const rect=$('map-area').getBoundingClientRect();state.scale=Math.max(state.scale,1.1);state.x=rect.width*.4-pos.screen[0]*state.scale;state.y=rect.height*.5-pos.screen[1]*state.scale;transform();}}
 }
 function refreshCoordinates(){
   const gpsActive=locationTracker.running,fix=state.gpsFix,readout=gpsActive?(fix?{point:fix,source:'GPS'}:null):state.readout;
   $('coordinate-card').hidden=!state.viewport&&!gpsActive;
   const grid=readout?formattedGrid(readout.point,state.crs):null;
-  $('coordinate-source').textContent=gpsActive?(fix?(Date.now()-fix.timestamp>30000?'GPS · last fix':'GPS'):'GPS · waiting'):readout?.source||'Map coordinates';
+  $('coordinate-source').textContent=gpsActive?(fix?(Date.now()-fix.timestamp>30000?'GPS · last fix':state.gpsFollowing?'GPS · following':'GPS · view unlocked'):'GPS · waiting'):readout?.source||'Map coordinates';
   $('readout-easting').textContent=grid?.eastingText||'—';$('readout-northing').textContent=grid?.northingText||'—';
   $('readout-crs').textContent=grid?.label||state.crs?.label||'WGS84 / UTM · automatic zone';
   $('readout-crs').title=datumNote((grid?.crs||state.crs)?.datum);
   $('readout-secondary').textContent=readout?`WGS84 ${readout.point.latitude.toFixed(6)}, ${readout.point.longitude.toFixed(6)}`:'Move over the aligned map or use Locate me';
   $('gps-status').hidden=!gpsActive&&state.gpsStatus!=='denied';
-  if(gpsActive&&fix){const age=Math.max(0,Math.round((Date.now()-fix.timestamp)/1000));const pos=state.model?.toPDF(fix.latitude,fix.longitude),inside=pos&&inPolygon(pos,state.model.footprint)&&pos[0]>=state.pageBox[0]&&pos[0]<=state.pageBox[2]&&pos[1]>=state.pageBox[1]&&pos[1]<=state.pageBox[3];$('gps-status').textContent=`±${Math.round(fix.accuracy)} m · ${age>30?`last fix ${age}s ago`:'GPS accuracy'}${state.model&&!inside?' · outside this page':''}${state.gpsStatus==='unavailable'?' · waiting for signal':''}`;}
+  if(gpsActive&&fix){const age=Math.max(0,Math.round((Date.now()-fix.timestamp)/1000));const pos=state.model?.toPDF(fix.latitude,fix.longitude),inside=pos&&inPolygon(pos,state.model.footprint)&&pos[0]>=state.pageBox[0]&&pos[0]<=state.pageBox[2]&&pos[1]>=state.pageBox[1]&&pos[1]<=state.pageBox[3];$('gps-status').textContent=`±${Math.round(fix.accuracy)} m · ${age>30?`last fix ${age}s ago`:'GPS accuracy'}${state.model&&!inside?' · outside this page':''}${state.gpsStatus==='unavailable'?' · waiting for signal':''}${!state.gpsFollowing?' · tap GPS to follow':''}`;}
 }
+function updateGPSButton(){const active=locationTracker.running,following=active&&state.gpsFollowing,label=!active?'Follow my GPS location':following?'Stop GPS following':'Resume GPS following';$('locate').setAttribute('aria-pressed',String(following));$('locate').setAttribute('aria-label',label);$('locate').title=!active?'Follow my GPS location':following?'GPS following · click to turn GPS off':'GPS view unlocked · click to follow';}
+function pauseGPSFollow(){if(state.gpsFollowing){state.gpsFollowing=false;updateGPSButton();refreshCoordinates();}}
 const locationTracker=new LocationTracker(navigator.geolocation,fix=>{
-  const first=!state.gpsFix;state.gpsFix=fix;refreshCoordinates();scheduleDraw();
-  if(first&&state.model){const pos=pdfPosition(fix);if(pos&&inPolygon(pos.pdf,state.model.footprint)){const rect=$('map-area').getBoundingClientRect();state.x=rect.width/2-pos.screen[0]*state.scale;state.y=rect.height/2-pos.screen[1]*state.scale;transform();}}
+  state.gpsFix=fix;refreshCoordinates();if(state.gpsFollowing)transform();else scheduleDraw();
 },(phase,message)=>{
-  state.gpsStatus=phase;$('locate').setAttribute('aria-pressed',String(locationTracker.running));$('locate').setAttribute('aria-label',locationTracker.running?'Stop GPS location':'Locate me');$('locate').title=locationTracker.running?'Stop GPS location':'Show my GPS location';
-  if(phase==='off')state.gpsFix=null;
+  state.gpsStatus=phase;
+  if(phase==='off'){state.gpsFix=null;state.gpsFollowing=false;}
+  updateGPSButton();
   $('gps-status').textContent=message;refreshCoordinates();scheduleDraw();
   if(phase==='denied'||(phase==='unavailable'&&!locationTracker.running))toast(message);
 });
@@ -183,11 +191,11 @@ function drawGPS(overlay,k){
   const title=svg('title');title.textContent=`GPS location · accuracy ±${Math.round(state.gpsFix.accuracy)} m`;
   g.append(title,svg('circle',{cx:x,cy:y,r:7/k,fill:'#3389dc',stroke:'#fff','stroke-width':2.5/k}));overlay.append(g);
 }
-$('locate').addEventListener('click',()=>locationTracker.running?locationTracker.stop():locationTracker.start());
+$('locate').addEventListener('click',()=>{if(!locationTracker.running){state.gpsFollowing=true;locationTracker.start();}else if(!state.gpsFollowing){state.gpsFollowing=true;updateGPSButton();refreshCoordinates();transform();}else locationTracker.stop();});
 window.addEventListener('pagehide',()=>locationTracker.stop());
 setInterval(()=>{if(locationTracker.running)refreshCoordinates();},10000);
 function cancelCapture(){state.capture=false;$('capture-hint').hidden=true;$('map-area').classList.remove('capturing');}
-function stopSession(){editorUI.reset();state.role=null;state.activeGroup=null;state.session?.abort();state.session=null;state.generation++;state.routes.clear();state.manifests={};state.routePending.clear();state.routeErrors.clear();state.group=null;state.layers=[];closeDetail();}
+function stopSession(){clearExportDownload();editorUI.reset();state.role=null;state.activeGroup=null;state.session?.abort();state.session=null;state.generation++;state.routes.clear();state.manifests={};state.routePending.clear();state.routeErrors.clear();state.group=null;state.layers=[];closeDetail();}
 function connectionLost(message){stopSession();state.mode='empty';status(message,'error');$('connect-label').textContent='Reconnect group';$('group-name').textContent='Group access ended';$('group-description').textContent='Shared features have been cleared. Ask the owner for a current invitation.';$('disconnect').hidden=true;remove('tw.portal.group.v1');reconcile();toast(message);}
 async function openGroup(group){
   stopSession();state.mode='live';state.session=new AbortController();const signal=state.session.signal,generation=state.generation;
@@ -238,13 +246,25 @@ function setLabelAngle(value,persist=false){state.labelAngle=Number(value);$('la
 setLabelAngle(state.labelAngle);
 $('label-angle').addEventListener('input',e=>setLabelAngle(e.target.value));$('label-angle').addEventListener('change',e=>setLabelAngle(e.target.value,true));$('reset-label-angle').addEventListener('click',()=>setLabelAngle(0,true));
 $('opacity').addEventListener('input',e=>{state.opacity=Number(e.target.value)/100;$('opacity-label').textContent=e.target.value+'%';scheduleDraw();});
-$('zoom-in').addEventListener('click',()=>zoom(1.25));$('zoom-out').addEventListener('click',()=>zoom(.8));$('fit').addEventListener('click',fit);$('close-detail').addEventListener('click',closeDetail);
+$('zoom-in').addEventListener('click',()=>zoom(1.25));$('zoom-out').addEventListener('click',()=>zoom(.8));$('fit').addEventListener('click',()=>{pauseGPSFollow();fit();});$('close-detail').addEventListener('click',closeDetail);
 $('sidebar-toggle').addEventListener('click',()=>{const open=document.body.classList.toggle('sidebar-open');$('sidebar-toggle').setAttribute('aria-expanded',String(open));});
 $('add-anchor').addEventListener('click',()=>{state.capture=true;$('capture-hint').hidden=false;$('map-area').classList.add('capturing');document.body.classList.remove('sidebar-open');$('sidebar-toggle').setAttribute('aria-expanded','false');});$('cancel-capture').addEventListener('click',cancelCapture);
 $('anchor-form').addEventListener('submit',e=>{e.preventDefault();try{const next=[...state.anchors,{...state.pendingAnchor,latitude:Number($('anchor-lat').value),longitude:Number($('anchor-lon').value)}];if(next.length>=3)makeModel(next,state.pageBox,false);state.anchors=next;save(calibrationKey(),next);$('anchor-dialog').close();updateAlignment();if(next.length<3)toast(`${next.length} reference point${next.length===1?'':'s'} saved. Pick ${3-next.length} more.`);}catch(error){$('anchor-error').textContent=error.message;}});
 $('reset-calibration').addEventListener('click',()=>{state.anchors=[];remove(calibrationKey());updateAlignment();});
 $('export-calibration').addEventListener('click',()=>{const blob=new Blob([JSON.stringify({schemaVersion:1,fingerprint:state.pdf.fingerprints[0],page:state.page,coordinateSystem:'EPSG:4326',anchors:state.anchors},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download='terrawarden-map-alignment.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 $('alignment-upload').addEventListener('change',async(e)=>{const file=e.target.files[0];if(!file)return;try{if(file.size>100000)throw new Error('Alignment file is too large.');const data=JSON.parse(await file.text());if(data.schemaVersion!==1||data.fingerprint!==state.pdf.fingerprints[0]||data.page!==state.page||data.coordinateSystem!=='EPSG:4326')throw new Error('This alignment belongs to a different PDF or page.');makeModel(data.anchors,state.pageBox,false);state.anchors=data.anchors;save(calibrationKey(),state.anchors);updateAlignment();}catch(error){toast(error.message);}e.target.value='';});
+function updateExportButtons(){const reason=state.exporting?'Preparing GeoPDF…':state.pageLoading?'Wait for the PDF page to finish loading.':!state.pdf?'Open a PDF map first.':!state.model?'Align this map before exporting a GeoPDF.':!state.metadata?'This PDF cannot be exported by this browser.':'';for(const id of ['export-pdf','export-pdf-tool']){$(id).disabled=!!reason;$(id).title=reason||'Export this PDF page with the visible layers at original quality';}$('export-pdf').textContent=state.exporting?'Preparing GeoPDF…':'Export map as GeoPDF';$('export-hint').textContent=reason||'Full page · visible layers and search results · original PDF quality';}
+function clearExportDownload(){state.exportAbort?.abort();if(exportURL)URL.revokeObjectURL(exportURL);exportURL=null;$('export-download').hidden=true;$('export-download').removeAttribute('href');}
+async function exportCurrentMap(){
+  if(state.exporting||state.pageLoading||!state.metadata||!state.model)return;
+  // Snapshot before loading the exporter so live sync cannot change which
+  // features, colours or filters belong to this requested file.
+  const snapshot={source:state.metadata,pageIndex:state.page-1,model:state.model,pageBox:[...state.pageBox],viewport:state.viewport,features:structuredClone(allFeatures()),hidden:new Set(state.hidden),search:$('search').value,opacity:state.opacity,labelAngle:state.labelAngle,scale:state.scale,sourceRegion:Number($('region-select').value)||0,usePDFAlignment:state.anchors.length===0,title:state.pdfName};
+  clearExportDownload();state.exportAbort=new AbortController();state.exporting=true;updateExportButtons();
+  try{const {exportGeoPDF,geoPDFFilename,rasterizeExportLabel}=await import('./geopdf-export.mjs');const result=await exportGeoPDF({...snapshot,rasterizeLabel:rasterizeExportLabel,signal:state.exportAbort.signal}),blob=new Blob([result.bytes],{type:'application/pdf'}),a=$('export-download');exportURL=URL.createObjectURL(blob);a.href=exportURL;a.download=geoPDFFilename(snapshot.title,snapshot.pageIndex+1);a.hidden=false;a.click();toast(`GeoPDF ready · ${result.pinCount} pins · ${result.routeCount} routes / lines. `);const link=node('a','export-toast-link','Download GeoPDF');link.href=exportURL;link.download=a.download;$('toast').append(link);}catch(error){toast(error.name==='AbortError'?'GeoPDF export cancelled.':`GeoPDF export failed. ${error.message}`);}finally{state.exportAbort=null;state.exporting=false;updateExportButtons();}
+}
+$('export-pdf').addEventListener('click',exportCurrentMap);$('export-pdf-tool').addEventListener('click',exportCurrentMap);
+window.addEventListener('pagehide',clearExportDownload);
 for(const b of document.querySelectorAll('[data-close]'))b.addEventListener('click',()=>$(b.dataset.close).close());
 function keyState(message){const key=readAPIKey();$('key-badge').textContent=key?'Saved on this browser':'Not saved';$('key-remove').hidden=!key;$('key-state').textContent=message||(key?'Your key is saved on this browser. It will still be here after reloading.':'Save a key to remember it on this browser.');}
 function connectionDialog(showKey=false){$('connect-error').textContent='';$('upgrade-submit').hidden=true;$('connect-form').dataset.upgrade='false';$('api-key').value=readAPIKey();$('api-key').type='password';$('key-show').textContent='Show key';$('viewer-name').value=saved('tw.portal.name')||'';$('service-setup').open=showKey||!$('api-key').value;keyState();$('connect-dialog').showModal();}
@@ -260,7 +280,7 @@ const point=(e)=>{const r=$('map-area').getBoundingClientRect();return[e.clientX
 function updateCursor(p){if(state.model&&state.viewport){const raw=state.viewport.convertToPdfPoint((p[0]-state.x)/state.scale,(p[1]-state.y)/state.scale),geo=state.model.toGeo(...raw);if(raw[0]>=state.pageBox[0]&&raw[0]<=state.pageBox[2]&&raw[1]>=state.pageBox[1]&&raw[1]<=state.pageBox[3]&&inPolygon(raw,state.model.footprint)&&Math.abs(geo.latitude)<=90){state.readout={point:geo,source:'Map cursor'};const grid=formattedGrid(geo,state.crs);$('coordinate-status').textContent=grid?`Cursor · E ${grid.eastingText} · N ${grid.northingText}`:'Cursor outside supported grid';refreshCoordinates();}}}
 function beginGesture(){const values=[...pointers.values()];gesture=values.length>=2?{kind:'pinch',distance:Math.hypot(values[0][0]-values[1][0],values[0][1]-values[1][1]),center:[(values[0][0]+values[1][0])/2,(values[0][1]+values[1][1])/2],x:state.x,y:state.y,scale:state.scale}:{kind:'pan',point:values[0],x:state.x,y:state.y};}
 $('map-area').addEventListener('pointerdown',e=>{if(!state.viewport||e.button!==0||e.target.closest('button,.map-tools,.feature-detail,.map-topbar,.capture-hint,.draw-controls'))return;if(!editorUI.active()&&!state.capture&&e.target.closest('.pin-marker,.route-line'))return;pointers.set(e.pointerId,point(e));$('map-area').setPointerCapture(e.pointerId);clicked={point:point(e),moved:false};beginGesture();});
-$('map-area').addEventListener('pointermove',e=>{const p=point(e);updateCursor(p);if(!pointers.has(e.pointerId)||!gesture)return;pointers.set(e.pointerId,p);if(clicked&&Math.hypot(p[0]-clicked.point[0],p[1]-clicked.point[1])>4)clicked.moved=true;if(gesture.kind==='pinch'&&pointers.size>=2){const[a,b]=[...pointers.values()],center=[(a[0]+b[0])/2,(a[1]+b[1])/2],distance=Math.hypot(a[0]-b[0],a[1]-b[1]);state.scale=Math.max(.03,Math.min(12,gesture.scale*distance/Math.max(1,gesture.distance)));state.x=center[0]-(gesture.center[0]-gesture.x)*state.scale/gesture.scale;state.y=center[1]-(gesture.center[1]-gesture.y)*state.scale/gesture.scale;if(clicked)clicked.moved=true;}else{state.x=gesture.x+p[0]-gesture.point[0];state.y=gesture.y+p[1]-gesture.point[1];}transform();});
+$('map-area').addEventListener('pointermove',e=>{const p=point(e);updateCursor(p);if(!pointers.has(e.pointerId)||!gesture)return;pointers.set(e.pointerId,p);if(clicked&&Math.hypot(p[0]-clicked.point[0],p[1]-clicked.point[1])>4){clicked.moved=true;if(gesture.kind==='pan')pauseGPSFollow();}if(gesture.kind==='pinch'&&pointers.size>=2){const[a,b]=[...pointers.values()],center=[(a[0]+b[0])/2,(a[1]+b[1])/2],distance=Math.hypot(a[0]-b[0],a[1]-b[1]);state.scale=Math.max(.03,Math.min(12,gesture.scale*distance/Math.max(1,gesture.distance)));state.x=center[0]-(gesture.center[0]-gesture.x)*state.scale/gesture.scale;state.y=center[1]-(gesture.center[1]-gesture.y)*state.scale/gesture.scale;if(clicked)clicked.moved=true;}else{state.x=gesture.x+p[0]-gesture.point[0];state.y=gesture.y+p[1]-gesture.point[1];}transform();});
 function endPointer(e){
   if(!pointers.has(e.pointerId))return;const p=point(e),tap=clicked&&!clicked.moved&&pointers.size===1&&e.type!=='pointercancel';
   pointers.delete(e.pointerId);if(pointers.size)beginGesture();else gesture=null;
@@ -272,7 +292,7 @@ function endPointer(e){
 }
 $('map-area').addEventListener('pointerup',endPointer);$('map-area').addEventListener('pointercancel',endPointer);
 $('map-area').addEventListener('wheel',e=>{if(!state.viewport)return;e.preventDefault();zoom(Math.exp(-e.deltaY*.0015),point(e));},{passive:false});
-$('map-area').addEventListener('keydown',e=>{if(e.target.closest('input,select,button,[role=button]'))return;if(e.key==='+'||e.key==='='){e.preventDefault();zoom(1.25);}else if(e.key==='-'){e.preventDefault();zoom(.8);}else if(e.key==='0'){e.preventDefault();fit();}else if(e.key==='Escape'){cancelCapture();editorUI.cancelMap(true);closeDetail();}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();state.x+=e.key==='ArrowLeft'?40:e.key==='ArrowRight'?-40:0;state.y+=e.key==='ArrowUp'?40:e.key==='ArrowDown'?-40:0;transform();}});
+$('map-area').addEventListener('keydown',e=>{if(e.target.closest('input,select,button,[role=button]'))return;if(e.key==='+'||e.key==='='){e.preventDefault();zoom(1.25);}else if(e.key==='-'){e.preventDefault();zoom(.8);}else if(e.key==='0'){e.preventDefault();pauseGPSFollow();fit();}else if(e.key==='Escape'){cancelCapture();editorUI.cancelMap(true);closeDetail();}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();pauseGPSFollow();state.x+=e.key==='ArrowLeft'?40:e.key==='ArrowRight'?-40:0;state.y+=e.key==='ArrowUp'?40:e.key==='ArrowDown'?-40:0;transform();}});
 document.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault();});
 $('map-area').addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();dragDepth++;$('drop-hint').hidden=false;}});
 $('map-area').addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('drop-hint').hidden=true;}});
@@ -291,6 +311,6 @@ function applySaved(result){
   reconcile();
 }
 const editorUI=createEditorUI({getState:()=>state,client:()=>state.mode==='demo'?demoClient:client,features:allFeatures,displayName:()=>state.mode==='demo'?'Demo editor':saved('tw.portal.name')||'Web portal',toast,draw:scheduleDraw,cancelCalibration:cancelCapture,closeDetail,saved:applySaved});
-renderLists();editorUI.refresh();
+renderLists();editorUI.refresh();updateExportButtons();
 const previousGroup=saved('tw.portal.group.v1'),apiKey=readAPIKey();
 if(previousGroup&&apiKey){try{client=new ViewerClient({...config,apiKey});if(client.identity?.refreshToken)openGroup(previousGroup).catch(e=>connectionLost(e.message));}catch(e){status(e.message,'error');}}
