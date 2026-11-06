@@ -7,7 +7,11 @@ const color=h=>rgb(parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,p
 const text=(str,x,y,size=9,ink='#778365',strong=false)=>page.drawText(str,{x,y,size,font:strong?bold:font,color:color(ink)});
 const line=(x1,y1,x2,y2,ink='#d5d9c1',thickness=.7)=>page.drawLine({start:{x:x1,y:y1},end:{x:x2,y:y2},color:color(ink),thickness});
 page.drawRectangle({x:0,y:0,width:1000,height:680,color:color('#fdfef9')});
-const brandMark=await pdf.embedPng(await readFile(new URL('../docs/portal/assets/terrawarden-mark.png',import.meta.url)));page.drawRectangle({x:60,y:620,width:28,height:28,color:color('#174d3a')});page.drawImage(brandMark,{x:63,y:623,width:22,height:21});text('TerraWarden',97,630,12,'#174d3a',true);text('REDRIDGE / SURVEY AREA 04',60,602,22,'#364b2e',true);text('FICTIONAL DEMO DATA',774,630,9,'#8e9a7c');text('WGS84 | EPSG:4326',802,608,9,'#849172');
+const brandMark=await pdf.embedPng(await readFile(new URL('../docs/assets/branding/terrawarden-logo.png',import.meta.url)));
+const brandWordmark=await pdf.embedPng(await readFile(new URL('../docs/assets/branding/terrawarden-wordmark-light.png',import.meta.url)));
+page.drawImage(brandMark,{x:60,y:620,width:34,height:34*565/648});
+page.drawImage(brandWordmark,{x:105,y:625,width:152,height:152*200/1010});
+text('REDRIDGE / SURVEY AREA 04',60,602,22,'#364b2e',true);text('FICTIONAL DEMO DATA',774,630,9,'#8e9a7c');text('WGS84 | EPSG:4326',802,608,9,'#849172');
 const box=[60,70,930,570];
 page.drawRectangle({x:60,y:70,width:870,height:500,color:color('#e8e9cf'),borderWidth:1,borderColor:color('#b8c19e')});
 // Synthetic topography, deliberately unrelated to an actual mine or survey.

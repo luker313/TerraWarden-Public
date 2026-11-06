@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/branding/terrawarden-banner-dark.svg">
+    <img src="docs/assets/branding/terrawarden-banner-light.svg" alt="TerraWarden — Field Mapping" width="100%">
+  </picture>
+</p>
+
 # TerraWarden Web Portal and support pages
 
 The public website for **TerraWarden** and **TerraWarden Field**, including the
@@ -90,7 +97,12 @@ browsers receive the new files without clearing saved identities or settings.
 
 ## Licensing and scope
 
-The original TerraWarden branding is retained. Third-party notices for PDF.js,
+The approved TerraWarden branding uses the original TW and stepped-mountain
+emblem in solid bright green (`#00e800`), the supplied light/dark wordmark
+artwork, and terrain contours fading into white or black. The portal follows
+its saved theme; the README banner follows the GitHub colour theme. Branding
+assets are in `docs/assets/branding/`; lettering is image artwork and does not
+depend on an installed font. Third-party notices for PDF.js,
 pdf-lib, fontkit and bundled fonts/codecs are in `docs/portal/vendor/`.
 The native app source and private service configuration remain outside this
 public repository.

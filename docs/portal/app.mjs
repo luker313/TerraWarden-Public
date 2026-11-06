@@ -238,7 +238,7 @@ $('pdf-upload').addEventListener('change',async(e)=>{const f=e.target.files[0];i
 $('page-select').addEventListener('change',e=>displayPage(Number(e.target.value)));
 $('region-select').addEventListener('change',updateAlignment);
 $('search').addEventListener('input',()=>{renderLists();scheduleDraw();});
-function setTheme(theme){document.documentElement.dataset.theme=theme;const dark=theme==='dark';$('theme-toggle').setAttribute('aria-pressed',String(dark));$('theme-toggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('theme-toggle').title=dark?'Switch to light mode':'Switch to dark mode';document.querySelector('meta[name="theme-color"]').content=dark?'#101914':'#f7f8f3';}
+function setTheme(theme){document.documentElement.dataset.theme=theme;const dark=theme==='dark';$('theme-toggle').setAttribute('aria-pressed',String(dark));$('theme-toggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('theme-toggle').title=dark?'Switch to light mode':'Switch to dark mode';document.querySelector('meta[name="theme-color"]').content=dark?'#012413':'#ecf9f1';}
 setTheme(document.documentElement.dataset.theme||'light');
 $('theme-toggle').addEventListener('click',()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';setTheme(theme);try{saveTheme(theme);}catch{toast('Theme changed for this visit. Browser storage is unavailable.');}});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',e=>{if(!readTheme())setTheme(e.matches?'dark':'light');});

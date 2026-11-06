@@ -1,5 +1,14 @@
 # Validation
 
+## Brand refresh — 6 November 2026
+
+- All 43 existing Node tests pass after regenerating the demo PDF with the new artwork.
+- The emblem and both wordmark PNGs match the approved main-app 1.11.1 branding assets byte for byte. Header lettering uses these images; no replacement font is required.
+- Light and dark README banners were rendered in the browser. Both include the complete stepped-mountain emblem and matching terrain fade.
+- Browser inspection covered the portal's light and dark welcome screens, the loaded demo map, and the mobile connection dialog. Header controls fit at 390 px and 320 px without horizontal overflow or overlap.
+- Local HTML asset references and branding SVGs validate, and `git diff --check` passes.
+- The URL, browser storage keys, saved-connection implementation, Firebase permissions and map/export logic are retained. Physical-device and live Firebase verification limits below still apply.
+
 Completed on 28 October 2026:
 
 - Eleven Node tests passed: affine/bilinear coordinate transforms, offset and sheared maps, the antimeridian, degenerate reference points, SSE framing/CRLF, multipath updates/deletions, layer/pin tombstones and privacy removals, route revisions/chunks/segments/counts, invitation parsing, Swift date epoch, viewer-only membership creation, rejection of editor invitations, access-cancellation handling, API-key persistence/removal and blocked-storage reporting.

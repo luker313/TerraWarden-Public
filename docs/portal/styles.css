@@ -54,3 +54,141 @@ button:disabled{cursor:default}
 /* Keep navigation/export tools reachable beside the feature inspector. */
 .feature-detail{right:76px;max-width:calc(100% - 96px)}
 @media(max-width:650px){.feature-detail{right:65px;max-width:calc(100% - 85px)}}
+
+/* Approved main-app brand: original artwork, solid green, white/black fade. */
+:root {
+  --brand-green: #00e800;
+  --brand-deep: #00e800;
+  --brand-title: #0d2116;
+  --brand-ink: #0d2116;
+  --brand-paper: #fff;
+  --ink: #1a2e22;
+  --heading: #0d2116;
+  --surface: #fff;
+  --paper: #fff;
+  --surface-soft: #f5faf7;
+  --hover: #eaf5ee;
+  --line: #d4e3da;
+  --line-soft: #e8f0eb;
+  --muted: #52685b;
+  --subtle: #5e7266;
+  --control: #076b1a;
+  --focus: #087a25;
+  --map-bg: #f1f6f3;
+  --map-dots: #879e901f;
+  --surface-float: #ffffffed;
+  --shadow: #092b1717;
+  --terrain-top: #ecf9f1;
+  --terrain-middle: #f9fcfa;
+  --terrain-image: url('../assets/branding/terrain-light.svg');
+  --action-ink: #041309;
+  --texture-veil: #ffffffb3;
+}
+:root[data-theme=dark] {
+  --brand-title: #fff;
+  --ink: #e6f2e9;
+  --heading: #fff;
+  --surface: #050d08;
+  --paper: #000;
+  --surface-soft: #0b1b12;
+  --hover: #132d1d;
+  --line: #2b4936;
+  --line-soft: #1a3022;
+  --muted: #b1c5b8;
+  --subtle: #93ad9d;
+  --control: #69dc85;
+  --focus: #69dc85;
+  --map-bg: #030905;
+  --map-dots: #8bb89d1a;
+  --surface-float: #06110beb;
+  --shadow: #00000070;
+  --terrain-top: #012413;
+  --terrain-middle: #001109;
+  --terrain-image: url('../assets/branding/terrain-dark.svg');
+  --texture-veil: #050d08b3;
+}
+.app-header {
+  background-image: linear-gradient(180deg, var(--terrain-top), var(--surface));
+  isolation: isolate;
+}
+.app-header::before, .map-empty::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--terrain-image) center top / 100% auto no-repeat;
+  -webkit-mask-image: linear-gradient(#000, #000b 30%, transparent 72%);
+  mask-image: linear-gradient(#000, #000b 30%, transparent 72%);
+}
+.app-header::before { background-size: 100% 720px; }
+.app-header .brand { gap: 14px; flex: 0 0 auto; }
+.app-header .brand img { padding: 0; background: none; border-radius: 0; object-fit: contain; }
+.app-header .brand .brand-emblem { width: 60px; height: auto; }
+.brand-lockup { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.brand-wordmark { display: block; width: 190px; }
+.app-header .brand .brand-wordmark img { display: block; width: 100%; height: auto; }
+.app-header .brand .brand-wordmark .wordmark-dark { display: none; }
+:root[data-theme=dark] .app-header .brand .brand-wordmark .wordmark-light { display: none; }
+:root[data-theme=dark] .app-header .brand .brand-wordmark .wordmark-dark { display: block; }
+.app-header .brand small { margin: 0; font-size: 7px; font-weight: 600; letter-spacing: 2.1px; line-height: 1; }
+.primary { background: var(--brand-green); color: var(--action-ink); }
+.primary:hover { background: #39ef39; }
+.header-actions .primary .status-dot { background: #08621b; }
+.status-dot { background: var(--brand-green); }
+#key-settings { display: inline-flex; align-items: center; gap: 6px; }
+.key-icon { display: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#sidebar {
+  background-image: linear-gradient(180deg, transparent, var(--surface) 580px), var(--terrain-image), linear-gradient(180deg, var(--terrain-top), var(--surface) 580px);
+  background-size: auto, 560px 660px, auto;
+  background-repeat: no-repeat;
+}
+.map-empty { background: linear-gradient(180deg, var(--terrain-top), var(--terrain-middle) 34%, var(--paper) 72%); isolation: isolate; }
+.map-empty .empty-art { width: 138px; height: 120px; margin-bottom: 25px; opacity: 1; flex: 0 0 auto; }
+.map-empty .empty-art img { width: 100%; height: 100%; object-fit: contain; }
+.tiny-mark { width: 18px; height: 16px; }
+.feature-detail, .coordinate-card, .sidebar-footer, dialog { background-image: linear-gradient(var(--texture-veil), var(--texture-veil)), var(--terrain-image); }
+.map-tools, .coordinate-card, .feature-detail, dialog { border-radius: 12px; }
+.map-tools { background: var(--surface-float); backdrop-filter: blur(16px); }
+.upload-card { border-color: var(--line); border-radius: 10px; }
+.capture-hint, .toast { background: var(--surface-soft); color: var(--heading); border: 1px solid var(--line); }
+.capture-hint button { color: var(--muted); }
+@media (max-width: 900px) {
+  .app-header .brand { gap: 12px; }
+  .app-header .brand .brand-emblem { width: 48px; }
+  .brand-wordmark { width: 156px; }
+}
+@media (max-width: 650px) {
+  .app-header .brand { gap: 10px; }
+  .app-header .brand .brand-emblem { width: 36px; }
+  .brand-wordmark { width: 104px; }
+  .brand-lockup { gap: 4px; }
+  .app-header .brand small { font-size: 6px; letter-spacing: 1.6px; }
+  .header-actions { gap: 6px; }
+  .header-actions > #key-settings { display: flex; justify-content: center; width: 24px; height: 28px; }
+  #key-settings .key-icon { display: block; }
+  #key-settings span { display: none; }
+  #connect { width: 100px; max-width: 100px; padding: 9px 7px; gap: 7px; font-size: 10px; }
+  .map-empty .empty-art { width: 119px; height: 104px; }
+}
+@media (max-width: 400px) {
+  .app-header { padding: 0 10px; gap: 8px; }
+  .app-header .brand { gap: 8px; }
+  .app-header .brand .brand-emblem { width: 32px; }
+  .brand-wordmark { width: 88px; }
+  .header-actions { gap: 5px; }
+  .theme-toggle { flex-basis: 25px; width: 25px; }
+  #connect { width: 85px; max-width: 85px; padding: 9px 6px; gap: 5px; font-size: 9px; }
+  #sidebar-toggle { width: 26px; }
+}
+@media (max-width: 360px) {
+  .app-header .brand { gap: 7px; }
+  .app-header .brand .brand-emblem { width: 28px; }
+  .brand-wordmark { width: 74px; }
+  .app-header .brand small { font-size: 5px; letter-spacing: 1.3px; }
+  .header-actions > #key-settings { width: 22px; }
+  #connect { width: 82px; max-width: 82px; }
+}
+
+.upload-symbol svg,.button-label svg,.inline-arrow{display:block;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.inline-arrow{display:inline-block;width:12px;height:12px;vertical-align:-2px;margin-left:3px}

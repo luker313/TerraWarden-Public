@@ -27,7 +27,7 @@ The key supplied in chat comes from the private iOS application's configuration.
 - Live Firebase REST streams for group pins/layers and route manifests, automatic token refresh/reconnection, and immutable route-chunk downloads.
 - Shared pin details, route and drawn-line geometry, layer visibility, opacity, and feature search.
 - Tombstones and privacy-removal filters, route-revision checks, and clearing shared features when group access ends.
-- The app's exact TW mark and mountain PNG assets. The public site's deep green `#174d3a`, bright green `#00cc12`, paper and typography conventions are retained. No replacement logo is generated.
+- The approved main-app branding: the exact TW and complete stepped-mountain PNG, supplied light/dark wordmark artwork, solid bright green `#00e800`, and matching terrain contours fading into white or black. Header lettering does not depend on browser fonts. Shared assets are in `docs/assets/branding/`.
 - A fictional Redridge demo with a bundled GeoPDF, pins, recorded route and drawn boundary. It does not contact Firebase.
 - A dedicated Save key control, masked input, optional reveal, removal and persistent browser storage. Saving does not require a successful group connection.
 
@@ -88,7 +88,7 @@ References: [GitHub Pages](https://docs.github.com/en/pages/getting-started-with
 
 ## Theme, labels and editing
 
-Use the sun/moon button in the header to switch light/dark mode. The initial theme follows the system; a chosen theme is remembered. A faint vector topographic texture decorates the header, sidebar and cards. PDF artwork retains its original colours. Under Layers, **Pin text angle** rotates all pin labels around their own pin positions from -180° to +180°. The angle is saved in this browser; **Reset text angle** restores 0°.
+Use the sun/moon button in the header to switch light/dark mode. The initial theme follows the system; a chosen theme is remembered. The refreshed header and welcome screen use the same terrain geometry and downward fade as the main app; cards and the sidebar retain a faint vector topographic texture. PDF artwork retains its original colours. Under Layers, **Pin text angle** rotates all pin labels around their own pin positions from -180° to +180°. The angle is saved in this browser; **Reset text angle** restores 0°.
 
 Editors can use **New layer**, **Add pin** and **Draw line**. Click the aligned map to position a pin or add line vertices, then finish and save. Pins can also be positioned with the displayed grid's easting/northing or WGS84 latitude/longitude. Select a feature for Edit/Delete; drawn lines also offer Redraw line. Existing recorded routes support metadata edits but are not converted to drawn lines. Layer names are edited with the pencil beside the layer.
 
