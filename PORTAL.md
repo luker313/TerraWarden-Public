@@ -135,8 +135,8 @@ and group connection. It does not require a Firebase key.
   poles. Quick regions include Australia, WA, Pilbara, New Zealand, both main
   islands, Hawke's Bay and the Chatham Islands. Place search is worldwide; the
   Aus/NZ preference ranks matching results first without excluding other places.
-- **Sources:** Esri World Imagery, Esri World Topographic Map and NASA GIBS Blue
-  Marble. Beyond 85 degrees latitude the Esri choices use NASA polar coverage.
+- **Sources:** Recent Sentinel-2 via Earth Search/AWS, Esri World Imagery, Esri
+  World Topographic Map and historical NASA GIBS Blue Marble. Beyond 85 degrees latitude the Esri choices use NASA polar coverage.
   Ground detail depends on the imagery available at the chosen location. The
   0.15 m/px satellite option sets output sampling, not a promise of 15 cm source
   imagery everywhere. NASA output has a 500 m/px floor; topo has a 1 m/px floor.
@@ -144,7 +144,9 @@ and group connection. It does not require a Firebase key.
   pixels across the selection, subject to source floors and partition rounding.
   Explicit presets/custom metres per pixel allow larger jobs. Atlas sheet detail
   supports 4,096, 8,192 or 16,384 pixels along its longest allowed dimension.
-  A3/A2/A1 and orientation change print layout while preserving ground sampling.
+  Fit map is the default: each page follows the map aspect ratio and its border
+  scales from the shorter map edge. Fixed A3/A2/A1 paper and orientation are
+  available explicitly; neither choice changes ground sampling.
 - **Preview:** pan/zoom/select the geographic area, see atlas boundaries and
   choose a sheet; print preview uses the same vector border scene as the PDF;
   Inspect detail fetches samples at the chosen output sampling. Print previews
@@ -184,7 +186,10 @@ metadata, with ten decimal places for geographic control points. Date-line
 areas split at +/-180 degrees; very wide/tall selections receive additional
 partitions to retain unambiguous geographic fitting.
 
-Map requests go to `services.arcgisonline.com` or `gibs.earthdata.nasa.gov`.
+Mosaic/overview map requests go to `services.arcgisonline.com` or
+`gibs.earthdata.nasa.gov`. Recent-image searches go to
+`earth-search.aws.element84.com`, and bounded TIFF range requests go to the
+public `sentinel-cogs` AWS bucket.
 Explicit place searches go to `geocoding-api.open-meteo.com`, are cached in the
 current page session and prioritise Aus/NZ results when selected. No search
 runs for each keystroke. Geographic area/title/export settings are remembered
@@ -193,3 +198,51 @@ locally under a separate key; existing saved group/API key keys are unchanged.
 References: [Esri Export Map](https://developers.arcgis.com/rest/services-reference/enterprise/export-map/),
 [NASA GIBS WMS](https://nasa-gibs.github.io/gibs-api-docs/access-basics/),
 [Open-Meteo / GeoNames search](https://open-meteo.com/en/docs/geocoding-api).
+
+
+### Proportional pages and imagery age - 7 November 2026
+
+**Fit map** removes fixed-paper letterboxing. Page width/height and all border
+artwork follow each sheet's geographic ground aspect ratio; no stretching or
+cropping of the selected bounds is used to fill spare paper. Every automatic
+atlas sheet has its own page size and GeoPDF viewport. Existing creator
+preferences migrate to Fit map once; an explicit fixed-paper choice made after
+this update remains saved.
+
+The **Detailed mosaic** can show old overview imagery, particularly at regional
+output sampling. Its centre metadata is queried at the chosen output sampling
+and displayed when available, explicitly labelled as a centre sample with
+dates varying elsewhere. A missing acquisition date is shown as unavailable.
+The date a map was exported is never presented as the imagery acquisition date.
+NASA Blue Marble is labelled as historical, rather than current imagery.
+
+**Recent Sentinel-2** uses the Earth Search `sentinel-2-l2a` collection's
+actual acquisition timestamps. Choose the last 30/90/365 days, the period end
+date, and a scene-wide cloud threshold. Candidates are ordered newest first,
+with up to two qualifying scenes per MGRS tile so a second in-period capture
+can fill cloud/nodata gaps. Native detail is 10 m; sub-metre output options
+are disabled for this source. The detailed mosaic remains available for finer
+spatial detail, with its separate age information.
+
+The renderer reads only bounded windows of public, cloud-optimised true-colour
+and scene-classification GeoTIFFs. It selects appropriate overviews, reprojects
+UTM source pixels into the exact WGS84 output bounds, and masks classified cloud,
+shadow, snow and nodata pixels. Uncovered pixels are visibly hatched. It does
+not place historical basemap pixels beneath a recent acquisition label. Each
+PDF page prints the dates of the scenes actually used on that page; the PDF
+subject also records capture information. An entirely uncovered export is
+rejected with an instruction to adjust the period/cloud limit.
+
+The area-selection mode uses a clearly labelled Esri navigation overview;
+Print preview and Inspect detail load the actual dated imagery. Catalogue
+searches are scoped to the selected preview/export sheet, not every sheet of a
+continent-scale atlas. A catalogue limit of 24 x 250 matches per geographic
+part is disclosed when reached. At most 16 raster readers are cached, each
+with a small HTTP block cache; decoded raster windows are limited to eight
+million pixels and reader caches are cleared between exported sheets.
+Large recent-image jobs can still require substantial network traffic/time,
+and Sentinel-2 does not supply complete ocean/polar coverage.
+
+`geotiff` 2.1.3 (MIT) is vendored as a scoped ES module in
+`docs/portal/vendor/geotiff.mjs`; its license is retained alongside it. No CDN,
+API key or additional backend is required for the new imagery option.

@@ -1,13 +1,13 @@
 import fontkit from './vendor/fontkit.mjs';
-import {dimensions,niceDistance,rasterPatches,resolutionText,wrapLongitude} from './map-plan.mjs';
-import {abortCheck} from './map-source.mjs';
+import {dimensions,niceDistance,rasterPatches,resolutionText,wrapLongitude} from './map-plan.mjs?v=20261107.2';
+import {abortCheck} from './map-source.mjs?v=20261107.2';
 const encoder=new TextEncoder(),n=v=>String(Number(v.toFixed(5))),hex=c=>c.match(/[a-f\d]{2}/gi).map(v=>parseInt(v,16)/255),pdfColour=c=>hex(c).map(n).join(' ');
 const literal=text=>`(${String(text).replace(/[^\x20-\x7e\xa0-\xff]/g,'-').replace(/[\\()]/g,'\\$&')})`;
 const unicode=text=>'<FEFF'+Array.from(String(text)).flatMap(char=>{const cp=char.codePointAt(0);return cp>65535?[0xd800+((cp-65536)>>10),0xdc00+((cp-65536)&1023)]:[cp];}).map(cp=>cp.toString(16).padStart(4,'0')).join('')+'>';
 export function coordinateLabel(value,axis,span=10){const precision=Math.min(7,Math.max(2,Math.ceil(-Math.log10(span/4))+1));return `${Math.abs(value).toFixed(precision)}°${axis==='lat'?(value<0?'S':'N'):(value<0?'W':'E')}`;}
 // One vector scene drives both print preview and PDF decoration.
-export function marginScene({plan,sheet,title='Field map',date=new Date().toISOString().slice(0,10)}){
-  const {width:w,height:h,unit:u,margin}=plan.layout,f=sheet.frame,d=dimensions(sheet.bounds),dark=margin!=='paper';
+export function marginScene({plan,sheet,title='Field map',date=new Date().toISOString().slice(0,10),imageryInfo}){
+  const {width:w,height:h,unit:u,margin}=sheet.layout||plan.layout,f=sheet.frame,d=dimensions(sheet.bounds),dark=margin!=='paper';
   const forest='#142e25',green='#00cc12',ink='#254737',muted='#587164',paper='#f7f8f3',on=dark?'#ffffff':ink;
   const items=[],rect=(x,y,width,height,fill)=>items.push({type:'rect',x,y,width,height,fill}),line=(x1,y1,x2,y2,stroke,width=1)=>items.push({type:'line',x1,y1,x2,y2,stroke,width}),text=(value,x,y,size,fill=ink,extra={})=>items.push({type:'text',value,x,y,size,fill,...extra});
   rect(0,0,w,h,paper);rect(0,h-92*u,w,92*u,dark?forest:'#e8f0e5');rect(0,h-94*u,w,2*u,green);
@@ -20,7 +20,9 @@ export function marginScene({plan,sheet,title='Field map',date=new Date().toISOS
   items.push({type:'image',key:'wordmark',x:85*u,y:h-57*u,width:160*u,height:31.68*u});
   text('FIELD ATLAS',86*u,h-73*u,7*u,dark?'#a8c3b0':muted,{spacing:2*u});
   text(title,282*u,h-48*u,23*u,on,{title:true,maxWidth:w-340*u});
-  text(`${plan.sourceInfo.name.toUpperCase()}  /  ${resolutionText(sheet.resolution)}  /  ${date}`,283*u,h-69*u,8*u,dark?'#b8d0bd':muted);
+  text(`${plan.sourceInfo.name.toUpperCase()}  /  ${resolutionText(sheet.resolution)}`,283*u,h-65*u,8*u,dark?'#b8d0bd':muted,{maxWidth:w-320*u});
+  const capture=imageryInfo?.label||(plan.source==='recent'?'Capture dates shown after imagery loads':plan.source==='earth'?'Historic composite; not current imagery':plan.source==='topo'?'Cartographic basemap':'Capture date unavailable; mosaic dates vary');
+  text(`${capture}  |  Exported ${date}${plan.source==='recent'?'  |  Hatching: no clear capture':''}`,283*u,h-82*u,6.5*u,dark?'#b8d0bd':muted,{maxWidth:w-320*u});
   // Registration ticks live outside the geographic viewport.
   for(let i=0;i<=4;i++){
     const x=f.x+f.width*i/4,y=f.y+f.height*i/4,b=sheet.bounds;
@@ -41,7 +43,7 @@ export function marginScene({plan,sheet,title='Field map',date=new Date().toISOS
   const ax=w-147*u,ay=42*u;items.push({type:'path',fill:forest,commands:[['M',ax,ay+18*u],['L',ax-5*u,ay],['L',ax,ay+4*u],['L',ax+5*u,ay],['Z']]});text('N',ax,ay+23*u,8*u,ink,{align:'center'});
   text(`SHEET ${String(sheet.number).padStart(2,'0')}`,w-34*u,51*u,9*u,ink,{align:'right',bold:true});text(`OF ${String(plan.sheets.length).padStart(2,'0')}`,w-34*u,37*u,7*u,muted,{align:'right'});
   line(34*u,24*u,w-34*u,24*u,'#cddccd',.6*u);
-  text(`${plan.sourceInfo.credit}${plan.polar&&plan.source!=='earth'?'; polar coverage: NASA GIBS':''}`,34*u,12*u,6.3*u,muted,{maxWidth:w-230*u});
+  text(`${plan.sourceInfo.credit}${plan.polar&&plan.source!=='earth'&&plan.source!=='recent'?'; polar coverage: NASA GIBS':''}`,34*u,12*u,6.3*u,muted,{maxWidth:w-230*u});
   text('TERRAWARDEN  /  EXPLORE WITH CONFIDENCE',w-34*u,12*u,6*u,muted,{align:'right'});
   return items;
 }
@@ -123,38 +125,42 @@ function scenePDF(scene,font,images){
   }).join('\n');
 }
 const WKT='GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AUTHORITY["EPSG","4326"]]';
-export async function exportMapAtlas({plan,title,from=1,to=plan.sheets.length,signal,sink=blobSink(),loadTile,fontBytes,brand={},features=[],progress=()=>{},date}){
+export async function exportMapAtlas({plan,title,from=1,to=plan.sheets.length,signal,sink=blobSink(),loadTile,fontBytes,brand={},features=[],progress=()=>{},date,getImageryInfo=()=>null}){
   const first=Number(from),last=Number(to);if(!Number.isInteger(first)||!Number.isInteger(last)||first<1||last<first||last>plan.sheets.length)throw new Error('Choose a valid sheet range.');
   if(!fontBytes||typeof loadTile!=='function')throw new Error('Map resources are unavailable.');
   abortCheck(signal);const font=fontkit.create(new Uint8Array(fontBytes)),writer=new PDFStream(sink,signal),root=writer.reserve(),pages=writer.reserve(),info=writer.reserve(),gcs=writer.reserve();
-  const selected=plan.sheets.slice(first-1,last),pageIDs=selected.map(()=>writer.reserve()),images={},totalPixels=selected.reduce((s,p)=>s+p.pixels,0);let done=0;
+  const selected=plan.sheets.slice(first-1,last),pageIDs=selected.map(()=>writer.reserve()),images={},totalPixels=selected.reduce((s,p)=>s+p.pixels,0),captureDescriptions=new Set(),coverage=[];let done=0;
   try{
     await writer.write('%PDF-1.7\n%TerraWarden GeoPDF\n');
     await writer.object(gcs,`<< /Type /GEOGCS /EPSG 4326 /WKT ${literal(WKT)} >>`);
     for(const [key,image] of Object.entries(brand)){if(!['logo','wordmark'].includes(key))continue;const id=writer.reserve();images[key]=id;await writer.stream(id,`/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`,image.bytes);}
     for(let index=0;index<selected.length;index++){
-      const sheet=selected[index],frame=sheet.frame,b=sheet.bounds,xobjects=Object.entries(images).map(([key,id])=>`/${key} ${id} 0 R`),ops=[scenePDF(marginScene({plan,sheet,title,date}),font,images)];let patchNumber=0;
+      const sheet=selected[index],frame=sheet.frame,b=sheet.bounds,xobjects=Object.entries(images).map(([key,id])=>`/${key} ${id} 0 R`),ops=[];let patchNumber=0;
       for(const patch of rasterPatches(sheet)){
         abortCheck(signal);progress({sheet:sheet.number,stage:'imagery',fraction:done/totalPixels,bytes:writer.position});
-        const bytes=await loadTile({...patch,source:plan.source,signal});abortCheck(signal);
+        const bytes=await loadTile({...patch,source:plan.source,sheetNumber:sheet.number,signal});abortCheck(signal);
         const id=writer.reserve(),key=`I${++patchNumber}`;
         await writer.stream(id,`/Type /XObject /Subtype /Image /Width ${patch.width} /Height ${patch.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Interpolate false /Filter /DCTDecode`,bytes);
         xobjects.push(`/${key} ${id} 0 R`);
         const x=frame.x+patch.x/sheet.width*frame.width,y=frame.y+(1-(patch.y+patch.height)/sheet.height)*frame.height,w=patch.width/sheet.width*frame.width,h=patch.height/sheet.height*frame.height;
         ops.push(`q ${n(w)} 0 0 ${n(h)} ${n(x)} ${n(y)} cm /${key} Do Q`);done+=patch.width*patch.height;
       }
+      const imageryInfo=await getImageryInfo(sheet);if(imageryInfo?.label)captureDescriptions.add(imageryInfo.label);if(imageryInfo?.recent)coverage.push(imageryInfo.missing);
+      ops.unshift(scenePDF(marginScene({plan,sheet,title,date,imageryInfo}),font,images));
       if(features.length)ops.push(`q ${n(frame.x)} ${n(frame.y)} ${n(frame.width)} ${n(frame.height)} re W n`,scenePDF(featureScene(features,sheet),font,{}),'Q');
       const content=writer.reserve(),measure=writer.reserve(),viewport=writer.reserve();
       await writer.stream(content,'',encoder.encode(ops.join('\n')));
       const local='[0 0 0 1 1 1 1 0]',geo=[b.south,b.west,b.north,b.west,b.north,b.east,b.south,b.east].map(v=>String(Number(v.toFixed(10)))).join(' ');
       await writer.object(measure,`<< /Type /Measure /Subtype /GEO /Bounds ${local} /LPTS ${local} /GPTS [${geo}] /GCS ${gcs} 0 R >>`);
       await writer.object(viewport,`<< /Type /Viewport /Name ${unicode(`${title||'TerraWarden map'} - sheet ${sheet.number}`)} /BBox [${[frame.x,frame.y,frame.x+frame.width,frame.y+frame.height].map(n).join(' ')}] /Measure ${measure} 0 R >>`);
-      await writer.object(pageIDs[index],`<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${n(plan.layout.width)} ${n(plan.layout.height)}] /Resources << /XObject << ${xobjects.join(' ')} >> >> /Contents ${content} 0 R /VP [${viewport} 0 R] >>`);
+      const pageLayout=sheet.layout||plan.layout;
+      await writer.object(pageIDs[index],`<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${n(pageLayout.width)} ${n(pageLayout.height)}] /Resources << /XObject << ${xobjects.join(' ')} >> >> /Contents ${content} 0 R /VP [${viewport} 0 R] >>`);
       progress({sheet:sheet.number,stage:'page',fraction:done/totalPixels,bytes:writer.position});
     }
     await writer.object(pages,`<< /Type /Pages /Kids [${pageIDs.map(id=>`${id} 0 R`).join(' ')}] /Count ${pageIDs.length} >>`);
     await writer.object(root,`<< /Type /Catalog /Pages ${pages} 0 R /Extensions << /ADBE << /BaseVersion /1.7 /ExtensionLevel 3 >> >> >>`);
-    await writer.object(info,`<< /Title ${unicode(title||'TerraWarden map')} /Author (TerraWarden) /Creator (TerraWarden Web Portal Map Creator) /Subject ${unicode(`${plan.sourceInfo.name}; WGS84 EPSG:4326; ${resolutionText(plan.resolution)}; ${plan.sourceInfo.credit}`)} >>`);
+    if(plan.source==='recent'&&coverage.length&&coverage.every(value=>value===1))throw new Error('No clear imagery covers these sheets in the selected period. Increase the period or cloud limit, or choose the detailed mosaic.');
+    await writer.object(info,`<< /Title ${unicode(title||'TerraWarden map')} /Author (TerraWarden) /Creator (TerraWarden Web Portal Map Creator) /Subject ${unicode(`${plan.sourceInfo.name}; WGS84 EPSG:4326; ${resolutionText(plan.resolution)}; ${plan.sourceInfo.credit}; ${[...captureDescriptions].join('; ').slice(0,4096)}`)} >>`);
     const size=await writer.finish(root,info);return {size,pages:pageIDs.length,blob:sink.blob?.()};
   }catch(error){await sink.abort?.().catch(()=>{});throw error;}
 }

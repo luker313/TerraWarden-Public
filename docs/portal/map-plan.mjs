@@ -1,6 +1,7 @@
 // All bounds are WGS84. East < west explicitly means crossing the date line.
 export const SOURCES = Object.freeze({
-  imagery: {name:'Satellite imagery', minimum:.15, credit:'Esri, Vantor, Earthstar Geographics and the GIS User Community', service:'World_Imagery'},
+  recent: {name:'Recent Sentinel-2', minimum:10, credit:'Copernicus Sentinel-2 / ESA; Earth Search by Element 84; AWS Open Data', recent:true},
+  imagery: {name:'Detailed imagery mosaic', minimum:.15, credit:'Esri, Vantor, Earthstar Geographics and the GIS User Community', service:'World_Imagery'},
   topo: {name:'Topographic map', minimum:1, credit:'Esri, HERE, Garmin, USGS and the GIS User Community', service:'World_Topo_Map'},
   earth: {name:'NASA Blue Marble', minimum:500, credit:'NASA GIBS / Blue Marble; imagery by NASA Earth Observatory', layer:'BlueMarble_ShadedRelief_Bathymetry'}
 });
@@ -37,12 +38,20 @@ export function splitDateLine(bounds){
     ...(b.west<180?[{...b,east:180}]:[]),...(b.east> -180?[{...b,west:-180}]:[])
   ];
 }
-export function pageLayout(paper='a3',orientation='landscape',margin='terrain'){
+export function pageLayout(paper='fit',orientation='landscape',margin='terrain',bounds){
+  if(paper==='fit'){
+    const d=dimensions(bounds),ratio=d.width/d.height,area=1122.551*634.89;
+    let width=Math.sqrt(area*ratio),height=width/ratio,unit=Math.min(width/650,height/600);
+    // Scale the entire border from the shorter map edge. There is no spare
+    // paper to letterbox and no forced landscape/portrait distortion.
+    const factor=Math.min(1,14000/(width+68*unit),14000/(height+207*unit));width*=factor;height*=factor;unit*=factor;
+    return {width:width+68*unit,height:height+207*unit,unit,margin,paper:'fit',map:{x:34*unit,y:87*unit,width,height}};
+  }
   const size=PAPERS[paper];if(!size)throw new Error('Choose a supported page size.');
   const [width,height]=orientation==='portrait'?[size[1],size[0]]:size;
   // A real map viewport excludes the decorative border in both preview and PDF.
   const unit=width/1190.551;
-  return {width,height,unit,margin,map:{x:34*unit,y:87*unit,width:width-68*unit,height:height-207*unit}};
+  return {width,height,unit,margin,paper,map:{x:34*unit,y:87*unit,width:width-68*unit,height:height-207*unit}};
 }
 export function fitMapFrame(layout,bounds){
   const d=dimensions(bounds),available=layout.map,ratio=d.width/d.height;
@@ -53,10 +62,10 @@ export function fitMapFrame(layout,bounds){
 // usable on a phone. Partitions also prevent ambiguous >180-degree GeoPDF fits.
 export function planMap(options={}){
   const bounds=validateBounds(options.bounds),source=SOURCES[options.source||'imagery'];if(!source)throw new Error('Choose a map source.');
-  const layout=pageLayout(options.paper||'a3',options.orientation||'landscape',options.margin||'terrain');
+  const paper=options.paper||'fit',layout=pageLayout(paper,options.orientation||'landscape',options.margin||'terrain',bounds);
   const detail=options.detail||'maximum',budget=options.pixelBudget||256_000_000;
   const d=dimensions(bounds),onlyPolar=bounds.north<=-85||bounds.south>=85;
-  const nativeMinimum=onlyPolar?500:source.minimum;
+  const nativeMinimum=onlyPolar&&!source.recent?500:source.minimum;
   const requested=detail==='maximum'?Math.max(nativeMinimum,Math.sqrt(d.width*d.height/budget)):Number(options.metresPerPixel);
   if(!Number.isFinite(requested)||requested<.1||requested>100000)throw new Error('Resolution must be between 0.1 and 100,000 metres per pixel.');
   const resolution=Math.max(requested,nativeMinimum),sheetPixels=Number(options.sheetPixels)||8192;
@@ -74,12 +83,13 @@ export function planMap(options={}){
     if(sheets.length+rows*columns>20000)throw new Error('This resolution needs more than 20,000 sheets. Increase metres per pixel or select a smaller area.');
     for(let row=0;row<rows;row++)for(let col=0;col<columns;col++){
       const b={west:part.west+(part.east-part.west)*col/columns,east:part.west+(part.east-part.west)*(col+1)/columns,north:part.north-(part.north-part.south)*row/rows,south:part.north-(part.north-part.south)*(row+1)/rows};
-      const dim=dimensions(b),localMinimum=b.north<=-85||b.south>=85?500:source.minimum;
+      const dim=dimensions(b),localMinimum=(b.north<=-85||b.south>=85)&&!source.recent?500:source.minimum;
       const mpp=Math.max(resolution,localMinimum),width=Math.max(1,Math.ceil(dim.width/mpp)),height=Math.max(1,Math.ceil(dim.height/mpp));
       // Prevent pathological dimensions while retaining chunked single pages.
       if(width*height>1_100_000_000||Math.max(width,height)>1_000_000)throw new Error('This single sheet is too large. Choose atlas pages or a coarser resolution.');
       const pixels=width*height;totalPixels+=pixels;
-      sheets.push({number:sheets.length+1,bounds:b,width,height,pixels,resolution:mpp,frame:fitMapFrame(layout,b),row,col});
+      const sheetLayout=paper==='fit'?pageLayout(paper,options.orientation,options.margin||'terrain',b):layout;
+      sheets.push({number:sheets.length+1,bounds:b,width,height,pixels,resolution:mpp,frame:fitMapFrame(sheetLayout,b),layout:sheetLayout,row,col});
     }
   }
   return {bounds,source:options.source||'imagery',sourceInfo:source,layout,resolution,requested,mode,sheets,totalPixels,estimatedBytes:Math.round(totalPixels*.55+sheets.length*380000+50000),polar:bounds.south< -85||bounds.north>85};

@@ -36,10 +36,14 @@ without connecting to Firebase.
   allow creating and editing shared pins, lines and layers, subject to the
   existing group permissions and Firebase rules.
 - **Create a map of anywhere on Earth.** Choose satellite imagery, topographic
-  mapping or NASA Blue Marble; search worldwide places, use Aus/NZ region
+  mapping, dated **Recent Sentinel-2 (10 m)** or historical NASA Blue Marble;
+  search worldwide places, use Aus/NZ region
   shortcuts, draw an area or enter exact WGS84 bounds. Set automatic or custom
   ground resolution, inspect the output pixels and preview the complete
-  TerraWarden border. Export one continuous GeoPDF or a numbered atlas.
+  TerraWarden border. **Fit map** makes each page follow its map aspect ratio
+  with a proportional border; fixed A3/A2/A1 paper remains available. Export
+  one continuous GeoPDF or a numbered atlas. Recent imagery offers date/cloud
+  controls and prints actual capture dates separately from the export date.
   Chunked rendering supports large areas without one enormous browser canvas;
   supported desktop browsers can write directly to a file. Other browsers can
   download manageable sheet ranges and continue with **Next sheets**.
@@ -67,7 +71,8 @@ browser stores its own anonymous Firebase identity and remembers the last
 group; clearing site data removes that identity and saved preferences.
 
 PDF maps, manual alignment, downloads and the GPS readout are handled locally.
-The optional map creator sends requested map bounds to Esri or NASA GIBS, and
+The optional map creator sends requested map bounds to Esri, NASA GIBS or
+Element 84 Earth Search, downloads Sentinel-2 raster subsets from AWS, and sends
 place queries to Open-Meteo / GeoNames. Provider attribution is retained on maps.
 The creator works without a shared group or Firebase API key.
 Shared edits go to the connected group's existing Firebase backend. This

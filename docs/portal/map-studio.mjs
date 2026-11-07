@@ -1,21 +1,35 @@
-import {REGIONS,planMap,dimensions,longitudeSpan,validateBounds,wrapLongitude,volumeRange,resolutionText,mapFilename} from './map-plan.mjs';
-import {loadMapRaster,rasterJPEG,searchPlaces,abortCheck} from './map-source.mjs';
-import {marginScene,paintMargin,featureScene,paintFeatures,exportMapAtlas,blobSink} from './map-pdf.mjs';
+import {REGIONS,planMap,dimensions,longitudeSpan,validateBounds,wrapLongitude,volumeRange,resolutionText,mapFilename} from './map-plan.mjs?v=20261107.2';
+import {loadMapRaster,rasterJPEG,searchPlaces,abortCheck} from './map-source.mjs?v=20261107.2';
+import {marginScene,paintMargin,featureScene,paintFeatures,exportMapAtlas,blobSink} from './map-pdf.mjs?v=20261107.2';
+import {findRecentScenes,RecentImagerySession,inspectMosaic} from './map-imagery.mjs?v=20261107.2';
 const $=id=>document.getElementById(id),dialog=$('map-studio'),canvas=$('studio-canvas'),context=canvas.getContext('2d');
-const ids=['north','west','south','east','source','quality','mpp','layout','sheet-pixels','map-title','paper','orientation','margin','layers'];
+const ids=['north','west','south','east','source','quality','mpp','layout','sheet-pixels','map-title','paper','orientation','margin','layers','days','cloud'];
 const fileSize=bytes=>bytes>=1e9?`${(bytes/1e9).toFixed(1)} GB`:bytes>=1e6?`${(bytes/1e6).toFixed(bytes<10e6?1:0)} MB`:`${Math.ceil(bytes/1000)} KB`;
 const canonical=view=>{const span=Math.min(360,view.east-view.west);if(span>=359.999999)return {west:-180,east:180,south:view.south,north:view.north};const west=wrapLongitude(view.west),east=west+span;return {west,east:east>180?east-360:east,south:view.south,north:view.north};};
 const smallArea=(latitude,longitude,radius=.16)=>({south:Math.max(-90,latitude-radius),north:Math.min(90,latitude+radius),west:wrapLongitude(longitude-radius/Math.max(.1,Math.cos(latitude*Math.PI/180))),east:wrapLongitude(longitude+radius/Math.max(.1,Math.cos(latitude*Math.PI/180)))});
 const img=async url=>{const value=new Image();value.src=url;await value.decode();return value;};
 export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
   const s={mode:'area',sheet:1,plan:null,view:{west:100,east:184,south:-53,north:-3},selecting:false,busy:false,images:{},raster:null,rasterBounds:null,rasterKey:'',rasterSource:'',generation:0,previewController:null,exportController:null,previewZoom:1,printPan:{x:0,y:0},detailZoom:1,detailCentre:{x:.5,y:.5},download:null,resize:null};
-  let previewTimer,drag=null,pinch=null,assetPromise,fontBytes,resultBlob,resultHandle,resultFilename,lastRange=null;
+  let previewTimer,drag=null,pinch=null,assetPromise,fontBytes,resultBlob,resultHandle,resultFilename,lastRange=null,metadataTimer,metadataController,metadataPromise,recentSession,recentKey,imageryInfo,lastResultKey;
   const pointers=new Map();
   function settings(){return {bounds:Object.fromEntries(['north','west','south','east'].map(k=>[k,$('studio-'+k).value])),source:$('studio-source').value,detail:$('studio-quality').value==='maximum'?'maximum':'custom',metresPerPixel:$('studio-quality').value==='custom'?$('studio-mpp').value:$('studio-quality').value,mode:$('studio-layout').value,paper:$('studio-paper').value,orientation:$('studio-orientation').value,margin:$('studio-margin').value,sheetPixels:Number($('studio-sheet-pixels').value)};}
   const title=()=>$('studio-map-title').value.trim()||'TerraWarden field map';
+  const resultKey=()=>JSON.stringify({settings:settings(),title:title(),layers:$('studio-layers').checked,date:dateOptions()});
+  function invalidateResult(){if(lastResultKey&&lastResultKey!==resultKey()){if(s.download)URL.revokeObjectURL(s.download);s.download=null;resultBlob=null;resultHandle=null;lastResultKey=null;$('studio-download').hidden=true;$('studio-open-map').hidden=true;}}
   const sheet=()=>s.plan?.sheets[s.sheet-1];
-  function save(){try{localStorage.setItem('tw.portal.mapStudio.v1',JSON.stringify(Object.fromEntries(ids.map(id=>[id,$('studio-'+id).type==='checkbox'?$('studio-'+id).checked:$('studio-'+id).value]))));}catch{/* Preferences do not affect map creation. */}}
-  function restore(){let data;try{data=JSON.parse(localStorage.getItem('tw.portal.mapStudio.v1'));}catch{}if(data&&typeof data==='object')for(const id of ids){const el=$('studio-'+id);if(data[id]!==undefined){if(el.type==='checkbox')el.checked=!!data[id];else el.value=String(data[id]);}}else setBounds(REGIONS.australia,false);}
+  function save(){try{localStorage.setItem('tw.portal.mapStudio.v1',JSON.stringify({...Object.fromEntries(ids.map(id=>[id,$('studio-'+id).type==='checkbox'?$('studio-'+id).checked:$('studio-'+id).value])),shapeVersion:2}));}catch{/* Preferences do not affect map creation. */}}
+  function restore(){let data;try{data=JSON.parse(localStorage.getItem('tw.portal.mapStudio.v1'));}catch{}if(data&&typeof data==='object'){for(const id of ids){const el=$('studio-'+id);if(data[id]!==undefined){if(el.type==='checkbox')el.checked=!!data[id];else el.value=String(data[id]);}}if(data.shapeVersion!==2)$('studio-paper').value='fit';}else setBounds(REGIONS.australia,false);}
+  const dateOptions=()=>({days:Number($('studio-days').value),cloud:Number($('studio-cloud').value),endDate:$('studio-date-end').value});
+  const sessionKey=(plan,bounds=plan.bounds)=>JSON.stringify({bounds,...dateOptions()});
+  function showImageryInfo(info){imageryInfo=info;$('studio-imagery-date').textContent=info.label;const recent=s.plan?.source==='recent';$('studio-imagery-note').textContent=recent?`10 m native detail. Cloud/shadow pixels are masked; hatched gaps have no clear capture in this period.${info.missing!=null?` ${Math.round(info.missing*100)}% of this preview is uncovered.`:''}${recentSession?.truncated?' Catalogue limit reached; split the selection for fuller coverage.':''}`:s.plan?.source==='imagery'?(info.description?`${info.description}. `:'')+'Dates vary across the map and by output sampling. Use recent Sentinel-2 when the capture date matters.':s.plan?.source==='earth'?'Historical global overview, including poles. This is not recent satellite imagery.':'A cartographic basemap; no single imagery capture date applies.';draw();}
+  function updateImagery(){
+    clearTimeout(metadataTimer);metadataController?.abort();metadataPromise=null;
+    const plan=s.plan;if(!plan)return;$('studio-date-controls').hidden=plan.source!=='recent';$('studio-recent').hidden=plan.source==='recent';
+    if(plan.source==='recent'){showImageryInfo({label:'Dated captures load in Print preview or Inspect detail',recent:true});return;}
+    showImageryInfo({label:plan.source==='imagery'?'Checking capture date at map centre…':plan.source==='earth'?'Historic composite · not current imagery':'Cartographic basemap · capture date not applicable'});
+    if(plan.source==='imagery')metadataTimer=setTimeout(()=>{const controller=new AbortController(),page=sheet();metadataController=controller;metadataPromise=inspectMosaic(page.bounds,page.resolution,controller.signal).then(info=>{if(plan===s.plan&&page===sheet())showImageryInfo(info);return info;}).catch(()=>{const info={label:'Capture date unavailable; mosaic may be years old'};if(plan===s.plan&&page===sheet()&&!controller.signal.aborted)showImageryInfo(info);return info;});},400);
+  }
+  async function recent(plan,signal,progress,bounds=plan.bounds){const key=sessionKey(plan,bounds);if(recentSession&&recentKey===key)return recentSession;const catalog=await findRecentScenes(bounds,dateOptions(),signal,undefined,progress);abortCheck(signal);recentSession=new RecentImagerySession(catalog);recentKey=key;return recentSession;}
   async function assets(){if(!assetPromise)assetPromise=Promise.all([
     img(new URL('../assets/branding/terrawarden-logo.png',import.meta.url).href),
     img(new URL('../assets/branding/terrawarden-wordmark-dark.png',import.meta.url).href),
@@ -41,7 +55,7 @@ export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
     if(!$('studio-direct').checked&&pixels>280_000_000){$('studio-progress-text').textContent+=' · reduce this range for a mobile download';}
   }
   function replan(refit=false){
-    if(s.busy)return;$('studio-custom-field').hidden=$('studio-quality').value!=='custom';$('studio-sheet-pixels').disabled=$('studio-layout').value==='single';
+    if(s.busy)return;invalidateResult();for(const option of $('studio-quality').options)option.disabled=$('studio-source').value==='recent'&&Number(option.value)>0&&Number(option.value)<10;if($('studio-quality').selectedOptions[0]?.disabled)$('studio-quality').value='10';$('studio-custom-field').hidden=$('studio-quality').value!=='custom';$('studio-sheet-pixels').disabled=$('studio-layout').value==='single';$('studio-orientation').disabled=$('studio-paper').value==='fit';
     try{
       s.plan=planMap(settings());s.sheet=Math.max(1,Math.min(s.sheet,s.plan.sheets.length));const d=dimensions(s.plan.bounds);
       $('studio-stat-resolution').textContent=resolutionText(s.plan.resolution);$('studio-stat-area').textContent=d.area<1e6?`${Math.round(d.area).toLocaleString('en')} m²`:`${Math.round(d.area/1e6).toLocaleString('en')} km²`;$('studio-stat-pages').textContent=s.plan.sheets.length.toLocaleString('en');$('studio-stat-size').textContent=`~${fileSize(s.plan.estimatedBytes)}`;
@@ -50,17 +64,18 @@ export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
       const messages=[];
       if(s.plan.sheets.length>1)messages.push(`${s.plan.sheets.length} individually georeferenced sheets. A shared border and sheet numbers keep the atlas organised.`);
       else messages.push('The border, coordinates and north arrow stay sharp at every zoom.');
-      if(s.plan.polar&&s.plan.source!=='earth')messages.push('Beyond 85° latitude, NASA Blue Marble supplies 500 m polar imagery.');
+      if(s.plan.polar&&s.plan.source!=='earth')messages.push(s.plan.source==='recent'?'Sentinel-2 has limited polar/ocean coverage; unavailable pixels are hatched.':'Beyond 85° latitude, NASA Blue Marble supplies 500 m polar imagery.');
       if(s.plan.requested<s.plan.resolution)messages.push(`This source is limited to ${resolutionText(s.plan.resolution)} output.`);
       if(s.plan.mode==='single'&&s.plan.sheets.length>1)messages.push('Very wide areas and date-line crossings are split to keep geographic alignment reliable.');
+      if(s.plan.layout.paper==='fit')messages.push('Page shape follows each map; the border scales with its shorter edge.');
       messages.push('File sizes are estimates; imagery detail varies by location.');
       $('studio-plan-note').classList.remove('error');$('studio-plan-note').textContent=messages.join(' ');
       $('studio-source-credit').textContent=s.plan.sourceInfo.credit+(s.plan.polar&&s.plan.source!=='earth'?' · polar imagery: NASA GIBS':'');
       if(refit){fitArea(s.plan.bounds);s.printPan={x:0,y:0};s.previewZoom=1;s.detailCentre={x:.5,y:.5};s.sheet=1;$('studio-sheet').value=1;}
-      lastRange=null;resetRange();save();schedulePreview();
+      lastRange=null;resetRange();save();updateImagery();schedulePreview();
     }catch(error){s.plan=null;$('studio-export').disabled=true;$('studio-plan-note').classList.add('error');$('studio-plan-note').textContent=error.message;$('studio-progress-text').textContent='Adjust the map settings to continue.';for(const id of ['resolution','area','pages','size'])$('studio-stat-'+id).textContent='—';s.previewController?.abort();s.generation++;$('studio-preview-loading').hidden=true;draw();}
   }
-  function schedulePreview(delay=250){clearTimeout(previewTimer);s.previewController?.abort();s.generation++;const keep=s.rasterSource===s.plan?.source&&s.rasterKey===s.mode&&(s.mode==='area'||s.mode==='print'&&JSON.stringify(s.rasterBounds)===JSON.stringify(sheet()?.bounds));if(!keep){if(s.raster)s.raster.width=s.raster.height=1;s.raster=null;s.rasterKey='';}$('studio-preview-error').hidden=true;draw();if(s.plan&&dialog.open)previewTimer=setTimeout(loadPreview,delay);}
+  function schedulePreview(delay=250){clearTimeout(previewTimer);s.previewController?.abort();s.generation++;const current=s.plan?.source==='recent'?sessionKey(s.plan,s.mode==='area'?s.plan.bounds:sheet()?.bounds):'',keep=s.rasterSource===s.plan?.source&&s.rasterKey===s.mode&&s.rasterSessionKey===current&&(s.mode==='area'||s.mode==='print'&&JSON.stringify(s.rasterBounds)===JSON.stringify(sheet()?.bounds));if(!keep){if(s.raster)s.raster.width=s.raster.height=1;s.raster=null;s.rasterKey='';}$('studio-preview-error').hidden=true;draw();if(s.plan&&dialog.open)previewTimer=setTimeout(loadPreview,delay);}
   function viewportPixels(){const max=2_000_000,dpr=Math.min(2,window.devicePixelRatio||1);let width=Math.max(16,Math.round(canvas.clientWidth*dpr)),height=Math.max(16,Math.round(canvas.clientHeight*dpr)),scale=Math.min(1,Math.sqrt(max/(width*height)));return {width:Math.round(width*scale),height:Math.round(height*scale)};}
   function detailBounds(){
     const p=sheet(),size=viewportPixels(),b=p.bounds,fx=Math.min(1,size.width/p.width/s.detailZoom),fy=Math.min(1,size.height/p.height/s.detailZoom),x=Math.max(fx/2,Math.min(1-fx/2,s.detailCentre.x)),y=Math.max(fy/2,Math.min(1-fy/2,s.detailCentre.y));s.detailCentre={x,y};
@@ -73,7 +88,7 @@ export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
     else if(mode==='print'){bounds=p.bounds;const scale=Math.min(1,1500/Math.max(p.width,p.height));width=Math.max(1,Math.round(p.width*scale));height=Math.max(1,Math.round(p.height*scale));}
     else{bounds=detailBounds();width=size.width;height=size.height;}
     $('studio-preview-loading').hidden=false;$('studio-preview-error').hidden=true;
-    try{const raster=await loadMapRaster({source,bounds,width,height,signal:controller.signal});if(generation!==s.generation){raster.width=raster.height=1;return;}if(s.raster)s.raster.width=s.raster.height=1;s.raster=raster;s.rasterBounds=bounds;s.rasterKey=mode;s.rasterSource=source;draw();}
+    try{let raster;if(source==='recent'&&mode!=='area'){const session=await recent(s.plan,controller.signal,message=>{if(generation===s.generation)$('studio-preview-loading').textContent=message;},p.bounds);raster=await session.render({bounds,width,height,signal:controller.signal,progress:message=>{if(generation===s.generation)$('studio-preview-loading').textContent=message;}});}else raster=await loadMapRaster({source:source==='recent'?'imagery':source,bounds,width,height,signal:controller.signal});if(generation!==s.generation){raster.width=raster.height=1;return;}if(s.raster)s.raster.width=s.raster.height=1;s.raster=raster;s.rasterBounds=bounds;s.rasterKey=mode;s.rasterSource=source;s.rasterSessionKey=source==='recent'?sessionKey(s.plan,mode==='area'?s.plan.bounds:p.bounds):'';if(raster.imageryInfo)showImageryInfo(raster.imageryInfo);draw();}
     catch(error){if(generation===s.generation&&error.name!=='AbortError'){$('studio-preview-error').querySelector('span').textContent=error.message;$('studio-preview-error').hidden=false;}}
     finally{if(generation===s.generation)$('studio-preview-loading').hidden=true;}
   }
@@ -92,9 +107,9 @@ export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
     if(drag?.select&&drag.end){context.setLineDash([5,4]);context.strokeStyle='#fff';context.lineWidth=2;context.strokeRect(drag.start.x,drag.start.y,drag.end.x-drag.start.x,drag.end.y-drag.start.y);context.setLineDash([]);}
   }
   function drawPrint(){
-    if(!s.plan)return;const l=s.plan.layout,p=sheet(),w=canvas.clientWidth,h=canvas.clientHeight,scale=Math.min((w-45)/l.width,(h-45)/l.height)*s.previewZoom,x=(w-l.width*scale)/2+s.printPan.x,y=(h+l.height*scale)/2+s.printPan.y;
+    if(!s.plan)return;const p=sheet(),l=p.layout||s.plan.layout,w=canvas.clientWidth,h=canvas.clientHeight,scale=Math.min((w-45)/l.width,(h-45)/l.height)*s.previewZoom,x=(w-l.width*scale)/2+s.printPan.x,y=(h+l.height*scale)/2+s.printPan.y;
     context.save();context.translate(x,y);context.scale(scale,-scale);context.shadowColor='#0003';context.shadowBlur=16;context.shadowOffsetY=3;context.fillStyle='#f7f8f3';context.fillRect(0,0,l.width,l.height);context.shadowColor='transparent';
-    context.beginPath();context.rect(0,0,l.width,l.height);context.clip();paintMargin(context,marginScene({plan:s.plan,sheet:p,title:title()}),currentImages());const f=p.frame;
+    context.beginPath();context.rect(0,0,l.width,l.height);context.clip();paintMargin(context,marginScene({plan:s.plan,sheet:p,title:title(),imageryInfo}),currentImages());const f=p.frame;
     if(s.raster&&s.rasterKey==='print'){context.save();context.translate(f.x,f.y+f.height);context.scale(1,-1);context.drawImage(s.raster,0,0,f.width,f.height);context.restore();}
     else{context.fillStyle='#d1dfd3';context.fillRect(f.x,f.y,f.width,f.height);context.save();context.translate(f.x+f.width/2,f.y+f.height/2);context.scale(1,-1);context.font='12px MapPrint, Arial';context.textAlign='center';context.fillStyle='#456653';context.fillText('Map imagery preview',0,0);context.restore();}
     if($('studio-layers').checked)paintFeatures(context,featureScene(getFeatures(),p),f);context.restore();
@@ -106,11 +121,12 @@ export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
   function draw(){
     if(!dialog.open)return;const w=canvas.clientWidth,h=canvas.clientHeight;if(w<1||h<1)return;const dpr=Math.min(2,window.devicePixelRatio||1);canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);context.setTransform(dpr,0,0,dpr,0,0);context.clearRect(0,0,w,h);
     if(s.mode==='area')drawArea();else if(s.mode==='print')drawPrint();else drawDetail();
-    $('studio-preview-badge').textContent=s.mode==='area'?(s.selecting?'Drag a rectangle to select your map area':'Drag to move · scroll to zoom · click a sheet'):s.mode==='print'?`Full border preview · ${Math.round(s.previewZoom*100)}% of fit`:`${Math.round(s.detailZoom*100)}% output pixels · drag to inspect · ${sheet()?resolutionText(sheet().resolution/s.detailZoom):''}`;
-    $('studio-preview-note').textContent=s.mode==='area'?'Coverage and atlas sheet boundaries':s.mode==='print'?'Preview uses reduced imagery; inspect detail for output pixels':'Samples the chosen output resolution; native detail may be lower';
+    $('studio-preview-badge').textContent=s.mode==='area'?(s.selecting?'Drag a rectangle to select your map area':s.plan?.source==='recent'?'Navigation basemap · Print preview shows dated imagery':'Drag to move · scroll to zoom · click a sheet'):s.mode==='print'?`Full border preview · ${Math.round(s.previewZoom*100)}% of fit`:`${Math.round(s.detailZoom*100)}% output pixels · drag to inspect · ${sheet()?resolutionText(sheet().resolution/s.detailZoom):''}`;
+    $('studio-source-credit').textContent=s.mode==='area'&&s.plan?.source==='recent'?'Navigation basemap: Esri, Vantor, Earthstar Geographics and the GIS User Community':(s.plan?.sourceInfo.credit||'');
+    $('studio-preview-note').textContent=s.mode==='area'?(s.plan?.source==='recent'?'Navigation overview only; Print preview loads dated imagery':'Coverage and atlas sheet boundaries'):s.mode==='print'?'Preview uses reduced imagery; inspect detail for output pixels':'Samples the chosen output resolution; native detail may be lower';
   }
   function changeMode(mode){if(s.busy||!['area','print','detail'].includes(mode))return;s.mode=mode;s.selecting=false;canvas.dataset.select='false';$('studio-select').setAttribute('aria-pressed','false');for(const b of dialog.querySelectorAll('[data-preview]'))b.setAttribute('aria-pressed',String(b.dataset.preview===mode));schedulePreview(20);}
-  function selectSheet(number){if(s.busy||!s.plan)return;s.sheet=Math.max(1,Math.min(s.plan.sheets.length,Number(number)||1));$('studio-sheet').value=s.sheet;$('studio-prev-sheet').disabled=s.sheet===1;$('studio-next-sheet').disabled=s.sheet===s.plan.sheets.length;s.detailCentre={x:.5,y:.5};schedulePreview(20);}
+  function selectSheet(number){if(s.busy||!s.plan)return;s.sheet=Math.max(1,Math.min(s.plan.sheets.length,Number(number)||1));$('studio-sheet').value=s.sheet;$('studio-prev-sheet').disabled=s.sheet===1;$('studio-next-sheet').disabled=s.sheet===s.plan.sheets.length;s.detailCentre={x:.5,y:.5};updateImagery();schedulePreview(20);}
   function zoom(factor,point){
     if(s.busy||!s.plan)return;
     if(s.mode==='area'){const p=point||{x:canvas.clientWidth/2,y:canvas.clientHeight/2},g=geographic(p),old=s.view,dx=Math.max(.000005,Math.min(360,(old.east-old.west)/factor)),dy=Math.max(.000005,Math.min(180,(old.north-old.south)/factor)),cy=Math.max(-90+dy/2,Math.min(90-dy/2,g.latitude+(p.y/canvas.clientHeight-.5)*dy)),cx=g.longitude+(.5-p.x/canvas.clientWidth)*dx;s.view={west:cx-dx/2,east:cx+dx/2,south:cy-dy/2,north:cy+dy/2};}
@@ -148,8 +164,10 @@ export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
   $('studio-use-view').addEventListener('click',()=>{if(s.busy)return;setBounds(canonical(s.view),false);replan(false);});
   $('studio-gps').addEventListener('click',()=>{if(s.busy)return;if(!navigator.geolocation){toast('GPS is unavailable in this browser.');return;}navigator.geolocation.getCurrentPosition(p=>{setBounds(smallArea(p.coords.latitude,p.coords.longitude));changeMode('area');},e=>toast(`Could not get your location. ${e.message}`),{enableHighAccuracy:true,timeout:15000,maximumAge:30000});});
   $('studio-minus').addEventListener('click',()=>zoom(.7));$('studio-plus').addEventListener('click',()=>zoom(1.4));$('studio-fit').addEventListener('click',fit);$('studio-retry').addEventListener('click',()=>schedulePreview(0));
+  $('studio-date-end').addEventListener('change',()=>replan(false));
+  $('studio-recent').addEventListener('click',()=>{if(s.busy)return;$('studio-source').value='recent';replan(false);changeMode('print');});
   $('studio-sheet').addEventListener('change',e=>selectSheet(e.target.value));$('studio-prev-sheet').addEventListener('click',()=>selectSheet(s.sheet-1));$('studio-next-sheet').addEventListener('click',()=>selectSheet(s.sheet+1));
-  for(const id of ids){$('studio-'+id).addEventListener(id==='map-title'?'input':'change',()=>{if(s.busy)return;if(['map-title','layers'].includes(id)){save();draw();}else replan(false);});}
+  for(const id of ids){$('studio-'+id).addEventListener(id==='map-title'?'input':'change',()=>{if(s.busy)return;if(['map-title','layers'].includes(id)){invalidateResult();save();draw();}else replan(false);});}
   $('studio-search-form').addEventListener('submit',async e=>{
     e.preventDefault();if(s.busy)return;const query=$('studio-search').value.trim(),results=$('studio-search-results'),coords=query.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)\s*$/);
     if(coords){const lat=Number(coords[1]),lon=Number(coords[2]);if(lat< -90||lat>90||lon< -180||lon>180){results.textContent='Use latitude -90 to 90 and longitude -180 to 180.';results.hidden=false;return;}setBounds(smallArea(lat,lon));changeMode('area');results.hidden=true;return;}
@@ -177,8 +195,12 @@ export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
       if(directAvailable&&$('studio-direct').checked){handle=await window.showSaveFilePicker({suggestedName:filename,types:[{description:'Georeferenced PDF map',accept:{'application/pdf':['.pdf']}}]});sink=await handle.createWritable();}
       else sink=blobSink();
       await assets();abortCheck(controller.signal);const brand=await jpegBrand(controller.signal),features=$('studio-layers').checked?structuredClone(getFeatures()):[];
-      const result=await exportMapAtlas({plan,title:name,from,to,fontBytes,brand,features,signal:controller.signal,sink,loadTile:async patch=>{const raster=await loadMapRaster(patch);try{return await rasterJPEG(raster,.95);}finally{raster.width=raster.height=1;}},progress:progress=>{$('studio-progress').value=progress.fraction;$('studio-progress-text').textContent=`${progress.stage==='page'?'Completed':'Building'} sheet ${progress.sheet} of ${plan.sheets.length} · ${Math.round(progress.fraction*100)}% · ${fileSize(progress.bytes)} written`;}});
-      abortCheck(controller.signal);if(s.download)URL.revokeObjectURL(s.download);resultBlob=result.blob;resultHandle=handle;resultFilename=filename;
+      let session=null,sessionSheet=null;
+      const sessionFor=async number=>{if(sessionSheet===number)return session;if(session)session.readers.clear();session=await recent(plan,controller.signal,message=>{$('studio-progress-text').textContent=message;},plan.sheets[number-1].bounds);session.pages.clear();sessionSheet=number;return session;};
+      let sourceInfo=imageryInfo;
+      const exportedInfo=async page=>{if(session)return session.informationForSheet(page.number);if(plan.source!=='imagery')return sourceInfo;try{return await inspectMosaic(page.bounds,page.resolution,controller.signal);}catch{return {label:'Capture date unavailable; mosaic dates vary'};}};
+      const result=await exportMapAtlas({plan,title:name,from,to,fontBytes,brand,features,signal:controller.signal,sink,getImageryInfo:exportedInfo,loadTile:async patch=>{const pageSession=plan.source==='recent'?await sessionFor(patch.sheetNumber):null;const raster=pageSession?await pageSession.render({...patch,progress:message=>{$('studio-progress-text').textContent=message;}}):await loadMapRaster(patch);try{return await rasterJPEG(raster,.95);}finally{raster.width=raster.height=1;}},progress:progress=>{$('studio-progress').value=progress.fraction;$('studio-progress-text').textContent=`${progress.stage==='page'?'Completed':'Building'} sheet ${progress.sheet} of ${plan.sheets.length} · ${Math.round(progress.fraction*100)}% · ${fileSize(progress.bytes)} written`;}});
+      abortCheck(controller.signal);if(s.download)URL.revokeObjectURL(s.download);resultBlob=result.blob;resultHandle=handle;resultFilename=filename;lastResultKey=resultKey();
       if(resultBlob){s.download=URL.createObjectURL(resultBlob);$('studio-download').href=s.download;$('studio-download').download=filename;$('studio-download').hidden=false;$('studio-download').click();}else{$('studio-download').hidden=true;s.download=null;}
       $('studio-open-map').hidden=result.size>100*1024*1024;lastRange={from,to};$('studio-next-volume').hidden=to>=plan.sheets.length;
       const message=`${result.pages} GeoPDF sheet${result.pages===1?'':'s'} ready · ${fileSize(result.size)}${handle?' · saved to your file':''}.`;
@@ -191,8 +213,8 @@ export function createMapStudio({onOpenMap,getFeatures=()=>[],toast=()=>{}}={}){
   });
   function close(){if(s.busy){s.exportController?.abort();return;}dialog.close();}
   $('studio-close').addEventListener('click',close);dialog.addEventListener('cancel',e=>{if(s.busy){e.preventDefault();s.exportController?.abort();}});
-  dialog.addEventListener('close',()=>{s.previewController?.abort();s.searchController?.abort();clearTimeout(previewTimer);s.generation++;});
+  dialog.addEventListener('close',()=>{s.previewController?.abort();s.searchController?.abort();metadataController?.abort();clearTimeout(metadataTimer);clearTimeout(previewTimer);s.generation++;});
   s.resize=new ResizeObserver(()=>{if(dialog.open&&!s.busy){draw();schedulePreview(300);}});s.resize.observe(canvas);
-  restore();
+  $('studio-date-end').value=new Date().toISOString().slice(0,10);$('studio-date-end').max=$('studio-date-end').value;restore();
   return {open(){if(!dialog.open)dialog.showModal();const count=getFeatures().length;$('studio-layer-note').textContent=count?`${count} visible shared features available. The current layer filters are respected.`:'No shared features selected. Connect a group in the portal to include its layers.';replan(!s.plan);void assets().catch(error=>{$('studio-plan-note').textContent=error.message;});},refresh(){if(dialog.open&&!s.busy){draw();$('studio-layer-note').textContent=`${getFeatures().length} visible shared features available.`;}}};
 }

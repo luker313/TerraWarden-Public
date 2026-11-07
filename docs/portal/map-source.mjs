@@ -1,4 +1,4 @@
-import {SOURCES,splitDateLine,longitudeSpan} from './map-plan.mjs';
+import {SOURCES,splitDateLine,longitudeSpan} from './map-plan.mjs?v=20261107.2';
 export const abortCheck=signal=>{if(signal?.aborted)throw new DOMException('Map creation cancelled.','AbortError');};
 const pause=(ms,signal)=>new Promise((resolve,reject)=>{abortCheck(signal);const done=()=>{signal?.removeEventListener('abort',cancel);resolve();},timer=setTimeout(done,ms),cancel=()=>{clearTimeout(timer);reject(new DOMException('Map creation cancelled.','AbortError'));};signal?.addEventListener('abort',cancel,{once:true});});
 export async function fetchMapResource(url,{signal,type='json',retries=2}={}){

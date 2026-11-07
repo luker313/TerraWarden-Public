@@ -84,3 +84,24 @@ Live Firebase synchronization has not been exercised against a real group. End-t
   iOS/Android devices, very large multi-GB direct saves, interruptions at the
   provider end and every geographic region have not been exhaustively tested.
   Source detail/availability and service limits still apply.
+
+
+## Proportional pages and dated imagery - 7 November 2026
+
+- 59 automated checks pass, including eight further checks for tall/wide/square
+  page proportions, individual atlas page sizes and geographic corners, strict
+  acquisition-date/cloud filtering, trusted pagination, exact integer raster
+  windows, classified cloud fallback within the requested period, conspicuous
+  missing coverage, and separate capture/export date labels.
+- A live Earth Search / AWS raster check for the Hastings test area selected a
+  31 October 2026 capture, rendered with 0% missing coverage. The browser loaded
+  the same dated capture through the public CORS-enabled services.
+- Existing 51 checks remain green, including original PDF exports and alignment,
+  authentication/group preferences, editor permissions and GPS behaviour.
+- Fixed A3/A2/A1 output remains available; the new Fit map default and legacy
+  preference migration remove fixed-paper blank bands.
+- The real downloaded proportional GeoPDF was rendered with Poppler; its page
+  matches the map aspect ratio, its header/subject identify the 31 October 2026
+  capture separately from the export date, and its southwest/northeast control
+  points reproduce the requested bounds. Opening it in the portal reports
+  **WGS84 GeoPDF aligned**. Dark/mobile controls were checked at 390 x 844.
