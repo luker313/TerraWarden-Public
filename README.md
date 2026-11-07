@@ -26,6 +26,8 @@ Support and privacy contact: [luker313@icloud.com](mailto:luker313@icloud.com)
 
 ## Web Portal
 
+![Worldwide GeoPDF map creator with TerraWarden print preview](docs/portal/assets/map-creator-preview.png)
+
 Open a PDF map and connect a TerraWarden group to view shared pins, recorded
 routes and drawn lines. A fictional **Explore demo** workspace is available
 without connecting to Firebase.
