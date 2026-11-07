@@ -13,7 +13,7 @@ import { filterFeatures } from './feature-visibility.mjs';
 import { gpsCameraTarget } from './gps-follow.mjs';
 const $=(id)=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
 const state={layers:[],hidden:new Set(),routes:new Map(),manifests:{},group:null,mode:'empty',pdf:null,metadata:null,page:1,viewport:null,model:null,regions:[],anchors:[],capture:false,scale:1,x:0,y:0,selected:null,session:null,generation:0,pdfGeneration:0,pageGeneration:0,routePending:new Set(),routeErrors:new Set(),role:null,opacity:1,labelAngle:readLabelAngle(),crs:null,readout:null,gpsFix:null,gpsStatus:'off',gpsFollowing:false,pageLoading:false,exporting:false};
-let toastTimer,dragDepth=0,drawRequest=0,client=null,demoClient=null,exportURL=null;
+let mapStudio,toastTimer,dragDepth=0,drawRequest=0,client=null,demoClient=null,exportURL=null;
 const pdfRenderer=new PDFViewportRenderer($('pdf-detail'));
 const saved=(key)=>{try{return JSON.parse(localStorage.getItem(key));}catch{return null;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{toast('Browser storage is unavailable. Changes will last for this visit.');}};
@@ -34,7 +34,7 @@ function reconcile(){
     for(const l of state.layers) l.routes=[...state.routes.values()].filter(r=>r.layerID===l.id&&!removed.routes?.[r.id]&&state.manifests[r.id]?.isDeleted===false&&state.manifests[r.id]?.revision===r.revision);
   }
   state.role=state.group?.members?.[(state.mode==='demo'?demoClient:client)?.uid]?.role||null;
-  renderLists();editorUI.refresh();scheduleDraw();
+  renderLists();editorUI.refresh();mapStudio?.refresh();scheduleDraw();
   if(state.selected){const current=allFeatures().find(f=>f.id===state.selected);if(current&&!state.hidden.has(current.layerID))showDetail(current,false);else closeDetail();}
 }
 function renderLists(){
@@ -315,3 +315,11 @@ const editorUI=createEditorUI({getState:()=>state,client:()=>state.mode==='demo'
 renderLists();editorUI.refresh();updateExportButtons();
 const previousGroup=saved('tw.portal.group.v1'),apiKey=readAPIKey();
 if(previousGroup&&apiKey){try{client=new ViewerClient({...config,apiKey});if(client.identity?.refreshToken)openGroup(previousGroup).catch(e=>connectionLost(e.message));else status('Saved group found · connect to rejoin on this browser','neutral');}catch(e){status(e.message,'error');}}
+
+// Map creation is independent of the current PDF and saved group connection.
+async function showMapStudio(){
+  try{if(!mapStudio){const {createMapStudio}=await import('./map-studio.mjs?v=20261107.1');mapStudio=createMapStudio({onOpenMap:openBytes,getFeatures:visibleFeatures,toast});}mapStudio.open();}
+  catch(error){toast(`Could not open the map creator. ${error.message}`);}
+}
+$('create-map').addEventListener('click',showMapStudio);
+$('create-map-empty').addEventListener('click',showMapStudio);

@@ -123,3 +123,73 @@ printed inside the base PDF remains part of that PDF.
 Exports are snapshots of the currently loaded rendered data. Allow routes to
 finish synchronising before exporting if all selected route geometry is needed.
 All export processing and the resulting download stay in the browser.
+
+
+## Worldwide GeoPDF map creator
+
+Choose **Create a GeoPDF map** above Base map, or the creation button on the
+empty map workspace. This workflow is independent of the currently open PDF
+and group connection. It does not require a Firebase key.
+
+- **Coverage:** select any WGS84 area, including date-line crossings and both
+  poles. Quick regions include Australia, WA, Pilbara, New Zealand, both main
+  islands, Hawke's Bay and the Chatham Islands. Place search is worldwide; the
+  Aus/NZ preference ranks matching results first without excluding other places.
+- **Sources:** Esri World Imagery, Esri World Topographic Map and NASA GIBS Blue
+  Marble. Beyond 85 degrees latitude the Esri choices use NASA polar coverage.
+  Ground detail depends on the imagery available at the chosen location. The
+  0.15 m/px satellite option sets output sampling, not a promise of 15 cm source
+  imagery everywhere. NASA output has a 500 m/px floor; topo has a 1 m/px floor.
+- **Resolution:** automatic maximum targets approximately 256 million output
+  pixels across the selection, subject to source floors and partition rounding.
+  Explicit presets/custom metres per pixel allow larger jobs. Atlas sheet detail
+  supports 4,096, 8,192 or 16,384 pixels along its longest allowed dimension.
+  A3/A2/A1 and orientation change print layout while preserving ground sampling.
+- **Preview:** pan/zoom/select the geographic area, see atlas boundaries and
+  choose a sheet; print preview uses the same vector border scene as the PDF;
+  Inspect detail fetches samples at the chosen output sampling. Print previews
+  use reduced imagery and do not imply that the download has that lower resolution.
+- **Margins:** Terrain and Paper styles retain the supplied TerraWarden logo and
+  wordmark, vector contour ribbons, scale bar at centre latitude, coordinate
+  ticks, north arrow, source credits, date and original atlas sheet numbers.
+  The WGS84 GeoPDF viewport covers only the actual map, excluding all margins.
+- **Shared features:** optionally snapshot visible pins/routes/lines from the
+  current group, respecting current layer/search filtering. Creating a map
+  does not write new group data. **Open in portal** loads a completed map up to
+  the existing viewer's 100 MiB limit without changing the connection.
+
+### Large jobs and geographic correctness
+
+The exporter fetches and JPEG-encodes at most a small raster patch at a time,
+writing PDF image objects incrementally. It never makes a canvas the size of
+all output pixels. On supported desktop browsers, **Save directly to file**
+uses a transactional writable file. Other browsers assemble a bounded PDF Blob
+(up to 192 MB) and default to a sheet range around 128 million pixels. Use
+**Next sheets** for subsequent parts, or choose your own range. Very large jobs
+may take a long time and require multiple downloads. Service failures stop
+export with an actionable error; partial direct files are aborted.
+
+There are bounded safeguards rather than an unlimited-download claim: 20,000
+planned sheets, about 1.1 billion pixels per single page, a 1-million-pixel
+maximum page dimension, and a 9 GB PDF writer limit. The requested job is
+checked before imagery work begins. Higher-detail custom requests that exceed
+these limits require smaller areas, coarser sampling or separate selections.
+
+All source images are requested in geographic EPSG:4326. Esri can adjust the
+returned bounding box for integer image aspect ratios: the renderer reads the
+returned extent and crops to the exact intended rectangle. It subdivides at
+high latitudes to retain sufficient samples on both axes within the service's
+4,096 px image limit. Every atlas page receives its own `/VP` + `/Measure /GEO`
+metadata, with ten decimal places for geographic control points. Date-line
+areas split at +/-180 degrees; very wide/tall selections receive additional
+partitions to retain unambiguous geographic fitting.
+
+Map requests go to `services.arcgisonline.com` or `gibs.earthdata.nasa.gov`.
+Explicit place searches go to `geocoding-api.open-meteo.com`, are cached in the
+current page session and prioritise Aus/NZ results when selected. No search
+runs for each keystroke. Geographic area/title/export settings are remembered
+locally under a separate key; existing saved group/API key keys are unchanged.
+
+References: [Esri Export Map](https://developers.arcgis.com/rest/services-reference/enterprise/export-map/),
+[NASA GIBS WMS](https://nasa-gibs.github.io/gibs-api-docs/access-basics/),
+[Open-Meteo / GeoNames search](https://open-meteo.com/en/docs/geocoding-api).

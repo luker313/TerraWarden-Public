@@ -33,6 +33,14 @@ without connecting to Firebase.
 - **View or contribute.** Read-only invitation codes allow viewing. Edit codes
   allow creating and editing shared pins, lines and layers, subject to the
   existing group permissions and Firebase rules.
+- **Create a map of anywhere on Earth.** Choose satellite imagery, topographic
+  mapping or NASA Blue Marble; search worldwide places, use Aus/NZ region
+  shortcuts, draw an area or enter exact WGS84 bounds. Set automatic or custom
+  ground resolution, inspect the output pixels and preview the complete
+  TerraWarden border. Export one continuous GeoPDF or a numbered atlas.
+  Chunked rendering supports large areas without one enormous browser canvas;
+  supported desktop browsers can write directly to a file. Other browsers can
+  download manageable sheet ranges and continue with **Next sheets**.
 - **Bring your own map.** PDF files are processed in this browser session.
   Supported GeoPDFs align automatically, including ArcMap GDA94/MGA maps.
   Other PDFs can be aligned using WGS84 reference points.
@@ -57,6 +65,9 @@ browser stores its own anonymous Firebase identity and remembers the last
 group; clearing site data removes that identity and saved preferences.
 
 PDF maps, manual alignment, downloads and the GPS readout are handled locally.
+The optional map creator sends requested map bounds to Esri or NASA GIBS, and
+place queries to Open-Meteo / GeoNames. Provider attribution is retained on maps.
+The creator works without a shared group or Firebase API key.
 Shared edits go to the connected group's existing Firebase backend. This
 repository does not include the private app source, backend credentials or
 Firebase rules, and the portal does not change those rules.
@@ -84,7 +95,8 @@ The Web Portal stays at `/portal/`.
 
 Serve `docs/` with a local static HTTP server to preview the site. Use HTTPS or
 localhost for real browser geolocation. Dependencies, fonts, workers and
-branding are vendored in the repository; normal use does not require a CDN.
+branding are vendored in the repository; PDF viewing does not require a CDN. Creating new imagery maps and searching
+places requires the selected external map services to be reachable.
 
 Run the automated checks with Node:
 

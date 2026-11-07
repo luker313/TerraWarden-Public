@@ -60,3 +60,27 @@ Live Firebase synchronization has not been exercised against a real group. End-t
 - Browser checks generated the GeoPDF and exposed the download link. The cloud browser's URL policy blocks opening or collecting `blob:` downloads; exported files were instead validated through the same exporter locally. Physical Safari/Avenza import and device GPS are not claimed as tested.
 - A local simulated browser GPS provider exercised successive moving fixes, zoom while locked, pointer-drag unlock, fixes while unlocked, resume, off-page handling and stop. On-page fixes stayed within 0.001 CSS pixels of the camera centre; off-page fixes preserved the last useful view. The simulation harness is not published.
 - The real Firebase API key remains excluded from public files; backend rules and permissions are unchanged.
+
+
+## Worldwide map creator - 7 November 2026
+
+- 51 Node checks pass: the original 43 plus eight new map-creation checks.
+  They cover exact world/Aus/NZ/polar coverage, date-line partitioning,
+  sheet pixel limits at different latitudes, invalid/oversized plans, complete
+  raster patch coverage, source request/crop extents, precise control points,
+  branded-margin exclusion, Unicode PDF metadata, streamed PDF cross-references,
+  independent atlas page georeferences, page ranges, aborts and buffer limits.
+- Browser checks exercised worldwide place search (Tokyo with Aus/NZ priority
+  still enabled), real Esri imagery, NASA full-world imagery including Antarctica,
+  area/print/detail modes, light/dark styling and a 390 x 844 responsive viewport.
+- A real Hawke's Bay GeoPDF was downloaded, reopened by PDF.js and automatically
+  recognised as WGS84 GeoPDF aligned. Its saved corners/centre were independently
+  checked with the PDF metadata reader. Poppler rendered the downloaded PDF for
+  visual inspection of the source imagery, TerraWarden artwork and vector margin.
+- Existing Firebase authentication, group storage and original-page GeoPDF
+  exports retain their existing regression checks. No production Firebase
+  credentials or rules were changed, and no real group edits were used for QA.
+- Browser checks use desktop Chrome and a constrained mobile viewport; physical
+  iOS/Android devices, very large multi-GB direct saves, interruptions at the
+  provider end and every geographic region have not been exhaustively tested.
+  Source detail/availability and service limits still apply.
