@@ -318,7 +318,7 @@ if(previousGroup&&apiKey){try{client=new ViewerClient({...config,apiKey});if(cli
 
 // Map creation is independent of the current PDF and saved group connection.
 async function showMapStudio(){
-  try{if(!mapStudio){const {createMapStudio}=await import('./map-studio.mjs?v=20261107.2');mapStudio=createMapStudio({onOpenMap:openBytes,getFeatures:visibleFeatures,toast});}mapStudio.open();}
+  try{if(!mapStudio){const {createMapStudio}=await import('./map-studio.mjs?v=20261108.1');mapStudio=createMapStudio({onOpenMap:openBytes,getFeatures:visibleFeatures,toast});}mapStudio.open();}
   catch(error){toast(`Could not open the map creator. ${error.message}`);}
 }
 $('create-map').addEventListener('click',showMapStudio);

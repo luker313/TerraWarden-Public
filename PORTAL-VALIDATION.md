@@ -105,3 +105,30 @@ Live Firebase synchronization has not been exercised against a real group. End-t
   capture separately from the export date, and its southwest/northeast control
   points reproduce the requested bounds. Opening it in the portal reports
   **WGS84 GeoPDF aligned**. Dark/mobile controls were checked at 390 x 844.
+
+
+## Independent, responsive map preview — 8 November 2026
+
+- 68 automated checks pass, including nine new preview checks: oversized/blank
+  export settings, partially entered coordinates, display-sized print requests,
+  output-pixel detail sampling, geographic reuse across pan/date-line changes,
+  pending-request deduplication, stale-result rejection, retry/cache reuse and
+  memory-bound eviction/cancellation.
+- Browser checks kept the worldwide navigation preview available with a
+  0.15 m/px export exceeding 20,000 sheets, and loaded the real dated Hastings
+  print preview while custom export resolution was blank. Creation stayed
+  disabled until export settings were valid.
+- Paper, border and title edits retained the dated preview; coarse 500 m/px
+  export settings did not reduce the separate print preview to a tiny image.
+  Inspect detail retains actual output sampling.
+- Pan/zoom and preview-mode controls remained enabled and were exercised during
+  a real recent-imagery export. Its downloaded GeoPDF retained one page, the
+  requested 10 m/px resolution, the 31 October 2026 capture label and exact
+  WGS84 southwest coordinates. Export readers are isolated from preview readers.
+- Canvas paints are combined per animation frame; completed preview images use
+  a 3-million-pixel/four-entry cache. Recent preview rasters are capped near
+  500,000 pixels; other previews near 1.25 million, independently of export size.
+- Physical Safari/device performance and changing external-service latency are
+  not measured here. No production Firebase data or native app code changed.
+
+![Dated preview remains visible with an unfinished export resolution](docs/portal/assets/map-preview-independent.png)

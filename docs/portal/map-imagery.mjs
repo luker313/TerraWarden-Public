@@ -1,6 +1,6 @@
-import {splitDateLine,dimensions,wrapLongitude} from './map-plan.mjs?v=20261107.2';
+import {splitDateLine,dimensions,wrapLongitude} from './map-plan.mjs?v=20261108.1';
 import {gridCRS,projectGeographic} from './coordinates.mjs';
-import {abortCheck,fetchMapResource} from './map-source.mjs?v=20261107.2';
+import {abortCheck,fetchMapResource} from './map-source.mjs?v=20261108.1';
 
 const DAY=86400000,ENDPOINT='https://earth-search.aws.element84.com/v1/search';
 const trustedCOG=url=>{try{const u=new URL(url);return u.protocol==='https:'&&['sentinel-cogs.s3.us-west-2.amazonaws.com','e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com'].includes(u.hostname);}catch{return false;}};

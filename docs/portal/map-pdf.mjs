@@ -1,6 +1,6 @@
 import fontkit from './vendor/fontkit.mjs';
-import {dimensions,niceDistance,rasterPatches,resolutionText,wrapLongitude} from './map-plan.mjs?v=20261107.2';
-import {abortCheck} from './map-source.mjs?v=20261107.2';
+import {dimensions,niceDistance,rasterPatches,resolutionText,wrapLongitude} from './map-plan.mjs?v=20261108.1';
+import {abortCheck} from './map-source.mjs?v=20261108.1';
 const encoder=new TextEncoder(),n=v=>String(Number(v.toFixed(5))),hex=c=>c.match(/[a-f\d]{2}/gi).map(v=>parseInt(v,16)/255),pdfColour=c=>hex(c).map(n).join(' ');
 const literal=text=>`(${String(text).replace(/[^\x20-\x7e\xa0-\xff]/g,'-').replace(/[\\()]/g,'\\$&')})`;
 const unicode=text=>'<FEFF'+Array.from(String(text)).flatMap(char=>{const cp=char.codePointAt(0);return cp>65535?[0xd800+((cp-65536)>>10),0xdc00+((cp-65536)&1023)]:[cp];}).map(cp=>cp.toString(16).padStart(4,'0')).join('')+'>';

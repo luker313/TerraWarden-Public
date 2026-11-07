@@ -150,7 +150,12 @@ and group connection. It does not require a Firebase key.
 - **Preview:** pan/zoom/select the geographic area, see atlas boundaries and
   choose a sheet; print preview uses the same vector border scene as the PDF;
   Inspect detail fetches samples at the chosen output sampling. Print previews
-  use reduced imagery and do not imply that the download has that lower resolution.
+  use screen-sized imagery, independently of export resolution. Invalid or oversized
+  export settings disable creation without blocking the map preview; incomplete
+  coordinates retain the last valid area. A small memory-bounded cache reuses recent
+  views, unchanged requests keep loading during styling edits, and pan/zoom/mode
+  controls remain available during an export. Inspect detail samples actual output
+  pixels; print preview does not imply that the download has its preview resolution.
 - **Margins:** Terrain and Paper styles retain the supplied TerraWarden logo and
   wordmark, vector contour ribbons, scale bar at centre latitude, coordinate
   ticks, north arrow, source credits, date and original atlas sheet numbers.
